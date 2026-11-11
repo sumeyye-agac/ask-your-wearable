@@ -18,7 +18,9 @@ built from that dataset with `scripts/build_daily.py`.
 
 ### What is in the exports
 
-- 35 users in total, 33 of them in both months.
+- 35 users in total, 33 of them in both months. One of the 35 (`2891001357`) has 12 hours of
+  data on a single day and nothing else, so no day of theirs counts; that is why the tables
+  below never show more than 34 users.
 - The first export has 11 tables, the second 18. Only the second has `sleepDay` and the
   separate daily steps, calories and intensities tables.
 - The first export's `dailyActivity` table is incomplete: most users only have rows for
@@ -46,6 +48,11 @@ built from that dataset with `scripts/build_daily.py`.
 - **Active minutes:** `fairly_active_minutes` and `very_active_minutes` count the day's minutes
   at intensity level 2 and 3, only if all 1440 minutes are present and at least one minute is
   above sedentary. A day that passes can have 0 active minutes; that is a measurement, not a gap.
+- **"This week":** the 7 days ending on the user's last complete day, which is the last date
+  with steps or active minutes (both need the whole day recorded). The export stops partway
+  through 12 May, so for the demo users "this week" is 5–11 May. The sleep and heart rate
+  recorded on 12 May stay in the table and can be asked for by date. "The last 4 weeks" ends on
+  the same day.
 
 As a check, the nightly sleep built this way was compared with Fitbit's own `sleepDay` table
 for the second month. On nights with a single Fitbit sleep record, minutes asleep match exactly
@@ -97,25 +104,27 @@ Even these have gaps; user `5577150313` has sleep on only 2 of the last 7 nights
 - The guideline lookup holds two CDC pages (sleep duration, physical activity for adults) and
   nothing else. The sleep comparison uses 7 hours, the lower bound for every adult age group, because the app does
   not know the user's age, and it counts the night's main sleep only (no naps).
-- "Am I active enough?" compares Fitbit's fairly and very active minutes with CDC's 150 moderate
-  or 75 vigorous minutes a week. This is approximate. Fitbit's levels are the device's own
-  per-minute estimate; CDC defines intensity by effort (3 to 5.9 METs and 6.0 METs or more, or
-  the talk test). Every answer carries that caveat. CDC also accepts an equivalent combination
-  of the two but its page gives no conversion, so none is computed. Muscle-strengthening
-  activity is not in the data and cannot be checked.
-- The last day of the export, 12 May, is partial, so "this week" has 6 days of steps and active
-  minutes for the demo users. A weekly total is then a lower bound: the app says a target was
-  reached when the 6 days already reach it, and otherwise says it cannot tell.
+- "Am I active enough?" adds fairly active minutes and twice the very active minutes and
+  compares the sum with CDC's 150 moderate minutes a week. The factor of 2 is CDC's rule of
+  thumb, not a measurement. The comparison is approximate for a second reason: Fitbit's levels
+  are the device's own per-minute estimate, while CDC defines intensity by effort (3 to 5.9 METs
+  and 6.0 METs or more, or the talk test). Every answer carries that caveat.
+  Muscle-strengthening activity is not in the data and cannot be checked.
+- If a week has days without data, a weekly total is a lower bound: the app says the
+  recommendation was reached when the days present already reach it, and otherwise says it
+  cannot tell.
 
 ## Guideline sources
 
-`get_guideline(topic)` is a lookup over two hand-checked pages, not retrieval. Both were read on
+`get_guideline(topic)` is a lookup over hand-checked CDC pages, not retrieval. All were read on
 2026-11-11; the numbers are the ones on the pages and the wording around them is shortened.
 
 | Topic | Page | Page date |
 |---|---|---|
 | `sleep_duration` | CDC, [About Sleep](https://www.cdc.gov/sleep/about/index.html) | 2024-05-15 |
 | `physical_activity` | CDC, [Adult Activity: An Overview](https://www.cdc.gov/physical-activity-basics/guidelines/adults.html) | 2023-12-20 |
+| 1 vigorous minute is about 2 moderate minutes | CDC, [What Counts as Physical Activity for Adults](https://www.cdc.gov/physical-activity-basics/adding-adults/what-counts.html) | 2023-12-06 |
+| Definition of moderate and vigorous intensity | CDC, [How to Measure Physical Activity Intensity](https://www.cdc.gov/physical-activity-basics/measuring/index.html) | 2025-12-04 |
 
 Source: CDC. The material is available on the CDC website at no charge. Its use here does not
 imply endorsement by CDC, ATSDR, HHS or the United States Government. CDC website text is in the
