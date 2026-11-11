@@ -232,3 +232,38 @@ One entry per working session. Newest at the bottom. Format is in `CLAUDE.md`.
   than time asleep", and in Turkish "most nights were around 7 hours". These belong in the
   day 7 unsupported-claim metric. `logs/trace.jsonl` still holds 4 "Fine." rows written by
   earlier test runs (git-ignored; not deleted). Next is day 6: deploy and CI.
+
+### 2026-11-11
+- Part A (state leak, question display, off-topic, threshold claims) was already fixed and
+  committed in the previous session (fa58223, 42d8633); reran all four cases on the real API
+  through the new page: one question per action and an empty box after each; the poem declined
+  in English and Turkish; no under-7-hours claim without a threshold call; "Uykum yeterli mi?"
+  used threshold 420 (4 at or above, 3 below). That answer also named which nights were below,
+  which the tool did not return, so `weekly_summary` now returns `dates_at_or_above` and
+  `dates_below`; after that both languages named exactly the tool's dates (5, 6, 10 May).
+- Page restructured into tabs "Ask", "How it works", "Data", with the person picker in the
+  sidebar. People are Person A/B/C (sorted ids) with a profile from daily-table counts only
+  (A: 59 days of steps, 58 nights of sleep, heart rate on 39 days from 1 Apr; B: 57, 55, 37 from
+  1 Apr; C: 61, 62, 44 from 30 Mar); the real id is in each answer's trace and on the Data tab.
+  "How it works": pipeline diagram (Graphviz DOT, no extra package) and five steps with the
+  recorded decisions and checks; a test asserts every figure shown also appears in README.md
+  or docs/LOG.md. Text lives in `wearable/app_text.py`.
+- Data tab facts checked today against the raw export and the Zenodo record: intensity codes
+  0-3 for 35 users, sleep codes 1-3 for 25 users, heart rate for 15 users from 29 March to
+  12 May, readings mostly 5 s apart (10th-90th percentile 3-15 s); the record says thirty
+  eligible users and that output varies with tracker type, but not which tracker each person
+  used. Daily table is sortable with a CSV download. Raw sample: `scripts/build_raw_sample.py`
+  writes one unchanged day per person of `hourlySteps`, `minuteIntensitiesNarrow`,
+  `minuteSleep` and `heartrate_seconds` to `data/demo/raw_sample/` (108 KB, gzip CSV). The app
+  builds steps from hourly, not minute, steps, so the sample has `hourlySteps` rather than the
+  minute steps table named in the request.
+- Theme in `.streamlit/config.toml`: light, teal accent #2A7F7A, Inter. Footer: "Built by
+  Sümeyye Ağaç" with GitHub and LinkedIn, plus the dataset credit. README: tabs, raw sample,
+  and a "Next steps" section. 173 tests. Reruns today cost about $0.02.
+- How to check it: `.venv/bin/python -m pytest && .venv/bin/streamlit run streamlit_app.py`, then open http://localhost:8501
+- Open issues: "Next steps" lists an MCP server as future work not planned for this version,
+  as requested, but the approved brief has it on day 8; decide whether day 8 changes. The
+  restructure goes beyond the day 5 line of the plan ("Streamlit UI, charts, trace panel"), at
+  the user's request. The Inter font loads from Google Fonts, so the page sends a request there.
+  Small derived phrases ("about 1 h 56 min above the average" is from the tool; the Turkish
+  "most nights around 7 hours" kind is not) remain for the day 7 metric. Next is day 6.
