@@ -68,6 +68,9 @@ def test_weekly_summary_compares_with_a_threshold():
     # 420 itself counts as at or above; the missing night counts as neither.
     assert out["threshold"] == {
         "value": 420.0, "value_text": "7 h 00 min", "days_at_or_above": 5, "days_below": 1,
+        "dates_at_or_above": ["2024-01-01", "2024-01-03", "2024-01-04", "2024-01-05",
+                              "2024-01-06"],
+        "dates_below": ["2024-01-02"],
         "mean_minus_threshold": 20.5, "mean_minus_threshold_text": "20 min"}
     below = weekly_summary(_frame(minutes_asleep=[300.0] * 7), "minutes_asleep", threshold=420)
     assert below["threshold"]["mean_minus_threshold"] == -120.0
@@ -79,6 +82,7 @@ def test_weekly_summary_compares_with_a_threshold():
 def test_weekly_summary_threshold_on_a_week_without_data(two_weeks):
     out = weekly_summary(two_weeks, "minutes_asleep", end_date="2024-01-07", threshold=420)
     assert out["threshold"]["days_at_or_above"] == 0 and out["threshold"]["days_below"] == 0
+    assert out["threshold"]["dates_at_or_above"] == [] and out["threshold"]["dates_below"] == []
     assert out["threshold"]["mean_minus_threshold"] is None
 
 

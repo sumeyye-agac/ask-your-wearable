@@ -52,7 +52,8 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "from the mean, the range (highest minus lowest), every day's value (null when "
         "there is no measurement) and, for steps and active minutes, the weekly total. "
         "Steps and active minutes are whole numbers. With a threshold it also returns "
-        "days_at_or_above, days_below and mean_minus_threshold. For the sleep metrics "
+        "days_at_or_above, days_below, their dates (dates_at_or_above, dates_below) and "
+        "mean_minus_threshold. For the sleep metrics "
         "every value also comes as hours and minutes in a '_text' field. Call it "
         "once per metric.",
         {"metric": _METRIC,
