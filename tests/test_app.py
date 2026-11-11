@@ -323,8 +323,8 @@ def test_comparison_chart_is_drawn_in_the_theme_colour_with_short_labels(monkeyp
                                               run_tool(df, "compare_periods", args), False)])
     stub_ask(monkeypatch, result)
     at = run_example(AppTest.from_file(APP).run(), 0)
-    assert any(c.value == "Mean heart rate (bpm): daily average in each period"
-               for c in at.caption)
+    assert any(c.value == ":material/monitor_heart: Mean heart rate (bpm): daily average in "
+               "each period" for c in at.caption)
     charts = at.get("vega_lite_chart")
     assert len(charts) == 1
     spec = json.loads(charts[0].proto.spec)
@@ -334,3 +334,45 @@ def test_comparison_chart_is_drawn_in_the_theme_colour_with_short_labels(monkeyp
         "Period", "Dates", "Mean heart rate (bpm)"]
     # Streamlit sends the rows separately from the spec; the period names themselves are
     # checked in test_presentation.py.
+
+
+# --- identity: logo, favicon, icons, accent ------------------------------------
+
+REPO = Path(APP).parent
+
+
+def test_logo_is_a_small_original_svg():
+    svg = (REPO / "assets/logo.svg").read_text()
+    assert svg.startswith("<svg") and "viewBox=\"0 0 64 64\"" in svg
+    assert len(svg.encode()) < 2_000
+    assert not any(word in svg.lower() for word in ("fitbit", "anthropic", "claude", "<image"))
+
+
+def test_header_shows_the_logo_next_to_the_title_and_sets_the_favicon():
+    at = AppTest.from_file(APP).run()
+    header = next(m.value for m in at.markdown if "ayw-header" in m.value and "<h1>" in m.value)
+    assert "<svg" in header and "<h1>Ask Your Wearable</h1>" in header
+    source = Path(APP).read_text()
+    assert "page_icon=str(LOGO)" in source and 'LOGO = REPO / "assets/logo.svg"' in source
+
+
+def test_example_pills_show_metric_icons_but_fill_plain_text():
+    at = AppTest.from_file(APP).run()
+    # Streamlit sends a leading icon separately from the label text.
+    options = at.button_group(key="example").proto.options
+    assert (options[0].content, options[0].content_icon) == (
+        "How was my sleep this week?", ":material/bedtime:")
+    assert all(o.content_icon.startswith(":material/") for o in options)
+    pick_example(at, 0)
+    assert at.text_input(key="question").value == "How was my sleep this week?"
+
+
+def test_accent_is_used_for_selection_tabs_header_and_ask():
+    style = next(m.value for m in AppTest.from_file(APP).run().markdown
+                 if m.value.lstrip().startswith("<style>"))
+    assert 'button[data-variant="segmented_control"][aria-checked="true"]' in style
+    assert '[data-testid="stTab"][aria-selected="true"]' in style
+    assert "#2A7F7A" in style and "#E3F0EE" in style
+    assert 'type="primary"' in Path(APP).read_text()
+    config = (REPO / ".streamlit/config.toml").read_text()
+    assert 'backgroundColor = "#F4F8F7"' in config
