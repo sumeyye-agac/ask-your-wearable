@@ -403,7 +403,7 @@ def test_example_answer_is_shown_before_any_question_with_chart_and_trace():
 def test_example_answer_is_a_real_run_that_todays_tools_reproduce():
     import json
     import pandas as pd
-    from wearable.registry import run_tool
+    from wearable.registry import run_tool, with_weekdays
     from wearable.schema import to_daily_frame
     record = json.loads((Path(APP).parent / "data/demo/example_answer.json").read_text())
     assert set(record) == {"time", "user_id", "question", "answer", "status", "model", "steps",
@@ -411,8 +411,10 @@ def test_example_answer_is_a_real_run_that_todays_tools_reproduce():
     assert record["status"] == "answered" and record["tool_calls"]
     table = pd.read_csv(Path(APP).parent / "data/demo/demo_daily.csv", dtype={"user_id": str})
     df = to_daily_frame(table[table.user_id == record["user_id"]].drop(columns="user_id"))
+    # The stored run is kept exactly as it happened, before tool results carried weekdays;
+    # with the weekdays added, it must equal what the tools return today.
     for call in record["tool_calls"]:
-        assert run_tool(df, call["name"], call["input"]) == call["output"]
+        assert run_tool(df, call["name"], call["input"]) == with_weekdays(call["output"])
 
 
 def test_example_answer_disappears_with_the_first_question_and_stays_away(monkeypatch):

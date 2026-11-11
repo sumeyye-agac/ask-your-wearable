@@ -6,7 +6,7 @@ from types import SimpleNamespace as NS
 import pytest
 
 from wearable import agent
-from wearable.registry import TOOL_FUNCTIONS
+from wearable.registry import TOOL_FUNCTIONS, with_weekdays
 from wearable.tools import weekly_summary
 
 
@@ -47,7 +47,8 @@ def test_tool_result_reaches_the_model_and_the_trace(two_weeks):
                         final("You averaged 11000 steps."))
     result = agent.ask(client, two_weeks, "How active was I this week?")
 
-    expected = weekly_summary(two_weeks, "steps")
+    # What the model sees is the tool's result with a weekday next to every date.
+    expected = with_weekdays(weekly_summary(two_weeks, "steps"))
     assert result.status == agent.ANSWERED and result.answer == "You averaged 11000 steps."
     assert result.steps == 2
     call = result.tool_calls[0]
@@ -185,3 +186,9 @@ def test_prompt_attributes_the_missing_significance_test_to_the_tool(two_weeks):
     prompt = " ".join(agent.system_prompt(two_weeks).split())
     assert "say that the tool does not run a significance test" in prompt
     assert "never that the data does not include one" in prompt
+
+
+def test_prompt_says_to_copy_weekdays_from_tool_results(two_weeks):
+    prompt = " ".join(agent.system_prompt(two_weeks).split())
+    assert "When you name a weekday, copy it from that field." in prompt
+    assert "Never work out a weekday yourself" in prompt

@@ -3,7 +3,7 @@
 import pytest
 
 from wearable.guidelines import ACTIVITY_CAVEAT, GUIDELINES, TOPICS, get_guideline
-from wearable.registry import run_tool
+from wearable.registry import run_tool, with_weekdays
 from wearable.schema import METRICS
 
 
@@ -63,4 +63,4 @@ def test_unknown_topic_lists_the_valid_ones():
 
 def test_reachable_through_the_registry(two_weeks):
     assert run_tool(two_weeks, "get_guideline", {"topic": "sleep_duration"}) == \
-        get_guideline("sleep_duration")
+        with_weekdays(get_guideline("sleep_duration"))
