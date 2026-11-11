@@ -223,3 +223,4 @@ data/private/
 .env
 data/raw/
 .claude/settings.local.json
+data/processed/
