@@ -7,7 +7,7 @@ import pytest
 from wearable.agent import ToolCall
 from wearable.guidelines import get_guideline
 from wearable.presentation import (NOT_CONFIGURED, UsageLimiter, api_error_message, chart_for,
-                                   credits, person_names, person_option, person_profile,
+                                   credits, person_names, person_profile,
                                    to_altair, ACCENT, PERIOD_NAMES)
 from wearable.registry import run_tool
 from wearable.schema import to_daily_frame
@@ -229,6 +229,3 @@ def test_default_accent_matches_the_theme():
     config = (Path(__file__).resolve().parents[1] / ".streamlit/config.toml").read_text()
     assert f'primaryColor = "{ACCENT}"' in config
 
-
-def test_person_option_gives_a_short_hint(two_weeks):
-    assert person_option("Person A", two_weeks) == "Person A · 10 days of steps"
