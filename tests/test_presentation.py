@@ -8,7 +8,7 @@ from wearable.agent import ToolCall
 from wearable.guidelines import get_guideline
 from wearable.presentation import (NOT_CONFIGURED, UsageLimiter, api_error_message, chart_for,
                                    credits, headline_numbers, person_card, person_names,
-                                   person_stats, to_altair, ACCENT, PERIOD_NAMES)
+                                   person_stats, to_altair, visitor_key, ACCENT, PERIOD_NAMES)
 from wearable.registry import run_tool
 from wearable.schema import to_daily_frame
 
@@ -416,3 +416,42 @@ def test_days_without_data_keep_their_slot_on_the_chart():
     assert spec.data["Hours asleep"].notna().sum() == 2
     domain = to_altair(spec).to_dict()["encoding"]["x"]["scale"]["domain"]
     assert domain == list(spec.data["day"]) and len(domain) == 7
+
+
+# --- visitor_key --------------------------------------------------------------
+
+def test_visitor_is_the_public_connection_address_when_nothing_is_forwarded():
+    assert visitor_key("8.8.8.8", None, "s1") == "ip:8.8.8.8"
+    assert visitor_key("8.8.8.8", "", "s1") == "ip:8.8.8.8"
+
+
+def test_forwarded_address_wins_because_the_connection_is_then_a_proxy():
+    assert visitor_key("10.0.0.7", "8.8.8.8", "s1") == "forwarded:8.8.8.8"
+    assert visitor_key("1.1.1.1", "8.8.8.8", "s1") == "forwarded:8.8.8.8"
+
+
+def test_last_public_forwarded_address_is_used_not_one_the_client_typed_in():
+    # The client can send its own X-Forwarded-For; a proxy appends the real address after it.
+    assert visitor_key(None, "9.9.9.9, 8.8.8.8", "s1") == "forwarded:8.8.8.8"
+    # Internal proxy hops after the visitor's address are skipped.
+    assert visitor_key("10.0.0.7", "8.8.8.8, 10.0.0.3, 192.168.1.1", "s1") == "forwarded:8.8.8.8"
+    assert visitor_key(None, "2001:4860:4860::8888", "s1") == "forwarded:2001:4860:4860::8888"
+
+
+@pytest.mark.parametrize("ip, forwarded", [
+    (None, None), ("10.0.0.7", None), ("192.168.1.20", ""), ("127.0.0.1", "10.0.0.3"),
+    ("fd00::1", "unknown"), ("not an address", "also, not"),
+])
+def test_without_a_public_address_the_browser_session_is_the_visitor(ip, forwarded):
+    assert visitor_key(ip, forwarded, "s1") == "session:s1"
+
+
+def test_daily_budget_holds_even_when_every_question_comes_from_a_new_visitor():
+    # The fallback when visitors cannot be told apart: new sessions get around the
+    # per-visitor count, but not around the app-wide budget.
+    limiter = UsageLimiter(per_visitor=10, daily_usd=0.01, today=lambda: date(2026, 1, 1))
+    for i in range(5):
+        visitor = visitor_key(None, None, f"session-{i}")
+        assert limiter.start(visitor) is None
+        limiter.finish(visitor, 0.002)
+    assert "budget for today" in limiter.start(visitor_key(None, None, "one-more"))
