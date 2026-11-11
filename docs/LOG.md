@@ -324,3 +324,28 @@ One entry per working session. Newest at the bottom. Format is in `CLAUDE.md`.
 - How to check it: `.venv/bin/python -m pytest && .venv/bin/streamlit run streamlit_app.py`, then open http://localhost:8501
 - Open issues: logo (three options shown for a choice), Material icons and the stronger teal
   accent are pending the logo choice.
+
+### 2026-11-11
+- Logo: chose option 1c from a temporary options page (three marks, then three speech-bubble
+  variants of the band-and-pulse mark, each shown large, at 32 and 16 px, as a browser tab and
+  on the header tint). 1c is a watch whose face is a speech bubble with a pulse line, the only
+  variant whose pulse stays readable at 16 px; its tail was shortened. `assets/logo.svg`
+  (under 1 KB, original) is shown next to the title and is the favicon (Streamlit serves it as
+  an SVG data URI).
+- More identity, with restraint, after "too pale, too empty": page background #F4F8F7 with white
+  inputs, a light teal header band (#E3F0EE) with the logo and a faint pulse-line motif (hidden
+  under 640 px), the selected person as a solid teal segment, the active tab in bold teal with a
+  3 px underline, and Ask as a teal primary button. The segment and tab styles are CSS on
+  Streamlit's DOM attributes (`data-variant="segmented_control"`, `data-testid="stTab"`)
+  because the theme has no option for them; a Streamlit upgrade can break them silently.
+- Material icons (rounded) per metric: bedtime for sleep, directions_walk for steps,
+  monitor_heart for heart rate, directions_run for active minutes; on every chart title (a
+  correlation shows both metrics' icons) and on the example pills, whose question still fills
+  the box as plain text.
+- Checked in the browser at 1280 px and 390 px (no horizontal scroll), and with one real
+  question ($0.0016): moon icon on the chart title, teal bars, teal selected person, favicon is
+  the logo. 193 tests.
+- How to check it: `.venv/bin/python -m pytest && .venv/bin/streamlit run streamlit_app.py`, then open http://localhost:8501
+- Open issues: for "How was my sleep this week?" the chart showed hours in bed, because the
+  chart follows the model's last chartable tool call (here minutes_in_bed after minutes_asleep).
+  Not changed; a rule such as preferring the metric the question names would need a decision.
