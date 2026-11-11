@@ -26,8 +26,10 @@ def test_weekly_summary_defaults_to_last_week(two_weeks):
     assert out["mean"] == 11000.0
     assert out["median"] == 11000.0
     assert out["total"] == 44000
-    assert out["highest"] == {"date": "2024-01-14", "value": 14000.0}
-    assert out["lowest"] == {"date": "2024-01-08", "value": 8000.0}
+    assert out["highest"] == {"date": "2024-01-14", "value": 14000.0, "above_mean": 3000.0}
+    assert out["lowest"] == {"date": "2024-01-08", "value": 8000.0, "below_mean": 3000.0}
+    assert out["range"] == 6000.0
+    assert "mean_text" not in out and "threshold" not in out  # steps are not minutes
     assert len(out["daily"]) == 7 and out["daily"][2] == {"date": "2024-01-10", "value": None}
 
 
@@ -44,6 +46,38 @@ def test_weekly_summary_week_without_data(two_weeks):
     assert out["days_with_data"] == 0
     assert out["mean"] is None and out["highest"] is None
     assert "total" not in out
+
+
+def test_weekly_summary_gives_minutes_as_hours_and_minutes():
+    out = weekly_summary(_frame(minutes_asleep=[443, 298, 541, 489, 469, 452, 516]),
+                         "minutes_asleep")
+    assert (out["mean"], out["mean_text"]) == (458.3, "7 h 38 min")
+    assert (out["median"], out["median_text"]) == (469.0, "7 h 49 min")
+    assert (out["range"], out["range_text"]) == (243.0, "4 h 03 min")
+    assert out["lowest"] == {"date": "2024-01-02", "value": 298.0, "value_text": "4 h 58 min",
+                             "below_mean": 160.3, "below_mean_text": "2 h 40 min"}
+    assert out["highest"]["above_mean_text"] == "1 h 23 min"
+    assert out["daily"][6] == {"date": "2024-01-07", "value": 516.0, "value_text": "8 h 36 min"}
+
+
+def test_weekly_summary_compares_with_a_threshold():
+    out = weekly_summary(_frame(minutes_asleep=[443, 298, 541, 489, 420, 452, None]),
+                         "minutes_asleep", threshold=420)
+    # 420 itself counts as at or above; the missing night counts as neither.
+    assert out["threshold"] == {
+        "value": 420.0, "value_text": "7 h 00 min", "days_at_or_above": 5, "days_below": 1,
+        "mean_minus_threshold": 20.5, "mean_minus_threshold_text": "20 min"}
+    below = weekly_summary(_frame(minutes_asleep=[300.0] * 7), "minutes_asleep", threshold=420)
+    assert below["threshold"]["mean_minus_threshold"] == -120.0
+    assert below["threshold"]["mean_minus_threshold_text"] == "-2 h 00 min"
+    with pytest.raises(ValueError, match="threshold"):
+        weekly_summary(_frame(minutes_asleep=[300.0] * 7), "minutes_asleep", threshold="7h")
+
+
+def test_weekly_summary_threshold_on_a_week_without_data(two_weeks):
+    out = weekly_summary(two_weeks, "minutes_asleep", end_date="2024-01-07", threshold=420)
+    assert out["threshold"]["days_at_or_above"] == 0 and out["threshold"]["days_below"] == 0
+    assert out["threshold"]["mean_minus_threshold"] is None
 
 
 def test_weekly_summary_tie_picks_first_date(two_weeks):
@@ -156,22 +190,37 @@ def test_most_active_day_full_range(two_weeks):
     out = most_active_day(two_weeks)
     assert (out["start"], out["end"], out["days"]) == ("2024-01-01", "2024-01-14", 14)
     assert out["days_with_data"] == 10
-    assert out["most_active"] == {"date": "2024-01-14", "weekday": "Sunday", "steps": 14000}
+    # 14000 leads the second day (13000) by 1000 and the mean (6900) by 7100.
+    assert out["most_active"] == {"date": "2024-01-14", "weekday": "Sunday", "steps": 14000,
+                                  "steps_above_mean": 7100.0, "steps_above_second": 1000}
     assert [d["steps"] for d in out["top_days"]] == [14000, 13000, 9000]
+    assert [d["steps_above_mean"] for d in out["top_days"]] == [7100.0, 6100.0, 2100.0]
+    assert out["missing"] == {"dates": ["2024-01-03", "2024-01-10", "2024-01-11",
+                                        "2024-01-12"], "truncated": False}
     # 1+2+4+5+6+7+8+9+13+14 thousand over 10 days.
     assert out["mean_steps"] == 6900.0
 
 
 def test_most_active_day_window_and_top_n(two_weeks):
     out = most_active_day(two_weeks, start_date="2024-01-01", end_date="2024-01-07", top_n=1)
-    assert out["most_active"] == {"date": "2024-01-07", "weekday": "Sunday", "steps": 7000}
+    # The lead over the second day is reported even when top_n=1 hides that day.
+    assert out["most_active"] == {"date": "2024-01-07", "weekday": "Sunday", "steps": 7000,
+                                  "steps_above_mean": 2833.3, "steps_above_second": 1000}
     assert len(out["top_days"]) == 1
+    assert out["missing"]["dates"] == ["2024-01-03"]
+
+
+def test_most_active_day_with_a_single_day_has_no_second_day():
+    out = most_active_day(_frame(steps=[5000, None, None]))
+    assert out["most_active"]["steps_above_second"] is None
+    assert out["most_active"]["steps_above_mean"] == 0.0
 
 
 def test_most_active_day_without_steps(two_weeks):
     out = most_active_day(two_weeks, start_date="2024-01-10", end_date="2024-01-12")
     assert out["days_with_data"] == 0
     assert out["most_active"] is None and out["top_days"] == [] and out["note"]
+    assert out["missing"]["dates"] == ["2024-01-10", "2024-01-11", "2024-01-12"]
 
 
 def test_most_active_day_tie_picks_first_date():
@@ -273,3 +322,25 @@ def test_new_tools_are_deterministic(two_weeks):
     assert most_active_day(two_weeks) == most_active_day(two_weeks)
     assert correlation(two_weeks, "steps", "minutes_in_bed") == \
         correlation(two_weeks, "steps", "minutes_in_bed")
+
+
+# --- comparisons returned so the reader never has to compute -------------------
+
+def test_compare_periods_names_the_higher_period_and_gives_text_for_minutes():
+    df = _frame(minutes_asleep=[400.0] * 5 + [430.0] * 5, steps=[9000.0] * 5 + [6000.0] * 5)
+    dates = dict(period_a_start="2024-01-01", period_a_end="2024-01-05",
+                 period_b_start="2024-01-06", period_b_end="2024-01-10")
+    sleep = compare_periods(df, "minutes_asleep", **dates)
+    assert sleep["higher_period"] == "period_b"
+    assert (sleep["difference_b_minus_a"], sleep["difference_b_minus_a_text"]) == \
+        (30.0, "30 min")
+    assert sleep["period_a"]["mean_text"] == "6 h 40 min"
+    steps = compare_periods(df, "steps", **dates)
+    assert steps["higher_period"] == "period_a" and steps["difference_b_minus_a"] == -3000.0
+    assert "difference_b_minus_a_text" not in steps and "mean_text" not in steps["period_a"]
+
+
+def test_compare_periods_without_enough_data_names_no_higher_period(two_weeks):
+    out = compare_periods(two_weeks, "minutes_asleep", preset="first_half_vs_second_half")
+    assert out["enough_data"] is False and out["higher_period"] is None
+    assert "difference_b_minus_a_text" not in out
