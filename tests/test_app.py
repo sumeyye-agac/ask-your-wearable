@@ -17,9 +17,11 @@ APP = str(Path(__file__).resolve().parents[1] / "streamlit_app.py")
 
 
 @pytest.fixture(autouse=True)
-def fresh_app(monkeypatch):
+def fresh_app(monkeypatch, tmp_path):
     # A set but empty key stops load_dotenv from reading a real key out of .env.
     monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    # Keep test runs out of the real logs/trace.jsonl.
+    monkeypatch.setenv("WEARABLE_TRACE", str(tmp_path / "trace.jsonl"))
     st.cache_data.clear()
     st.cache_resource.clear()
     yield
@@ -31,14 +33,34 @@ def run_example(at: AppTest, index: int = 0) -> AppTest:
     return at
 
 
-def stub_ask(monkeypatch, result=None, error=None):
+def stub_ask(monkeypatch, result=None, error=None) -> list[str]:
+    """Replace the agent; returns the list of questions it receives."""
+    asked: list[str] = []
+
     def fake(client, df, question, **kwargs):
+        asked.append(question)
         if error is not None:
             raise error
         result.question = question
         return result
     monkeypatch.setattr(wearable.agent, "ask", fake)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-used")
+    return asked
+
+
+def simple_result(answer="Fine.") -> AgentResult:
+    return AgentResult(question="", answer=answer, status="answered",
+                       model="claude-haiku-5-5", steps=1)
+
+
+def type_and_submit(at: AppTest, text: str) -> AppTest:
+    at.text_input(key="question").set_value(text)
+    at.button[-1].click().run()     # the form's Ask button is the last button on the page
+    return at
+
+
+def shown_question(at: AppTest) -> str:
+    return next(m.value for m in at.markdown if m.value.startswith("**Question:**"))
 
 
 def test_page_renders_with_users_examples_and_notes():
@@ -70,7 +92,7 @@ def test_answer_chart_trace_and_cdc_credit(monkeypatch):
     stub_ask(monkeypatch, result)
     at = run_example(AppTest.from_file(APP).run(), 4)
     assert not at.exception
-    assert at.text_input(key="question").value == "Is my sleep enough?"
+    assert shown_question(at) == "**Question:** Is my sleep enough?"
     assert any("7 h 30 min" in m.value for m in at.markdown)
     assert any(c.value == guideline["credit"] for c in at.caption)
     assert any("Hours asleep per day" in c.value for c in at.caption)
@@ -126,3 +148,47 @@ def test_question_limit_per_visitor(monkeypatch):
     assert not at.error
     at.button(key="example_0").click().run()
     assert "limit per visitor" in at.error[0].value
+
+
+# --- one question per action (state leak found in browser testing) -------------
+
+def test_example_then_typed_question_sends_only_the_typed_one(monkeypatch):
+    asked = stub_ask(monkeypatch, simple_result())
+    at = run_example(AppTest.from_file(APP).run(), 0)
+    assert asked == ["How was my sleep this week?"]
+    # The example never lands in the box, so typing cannot extend it.
+    assert at.text_input(key="question").value == ""
+    type_and_submit(at, "Which day was I most active?")
+    assert asked == ["How was my sleep this week?", "Which day was I most active?"]
+    assert shown_question(at) == "**Question:** Which day was I most active?"
+
+
+def test_box_is_cleared_after_submit_and_empty_submit_sends_nothing(monkeypatch):
+    asked = stub_ask(monkeypatch, simple_result())
+    at = type_and_submit(AppTest.from_file(APP).run(), "Am I active enough?")
+    assert at.text_input(key="question").value == ""
+    at.button[-1].click().run()
+    assert asked == ["Am I active enough?"]
+
+
+def test_typed_then_example_sends_only_the_example(monkeypatch):
+    asked = stub_ask(monkeypatch, simple_result())
+    at = AppTest.from_file(APP).run()
+    at.text_input(key="question").set_value("half-typed, never submitted")
+    run_example(at, 3)
+    assert asked == ["Am I active enough?"]
+
+
+def test_question_is_shown_escaped_above_the_answer(monkeypatch):
+    stub_ask(monkeypatch, simple_result("Your steps rose."))
+    at = type_and_submit(AppTest.from_file(APP).run(), "Did I walk > 10,000 steps? *bold*")
+    values = [m.value for m in at.markdown]
+    q = values.index(shown_question(at))
+    assert values[q + 1] == "Your steps rose."
+    assert "\\*bold\\*" in values[q] and "\\>" in values[q]
+
+
+def test_question_is_shown_with_an_error_too():
+    at = run_example(AppTest.from_file(APP).run(), 2)
+    assert "no API key" in at.error[0].value
+    assert "walk less" in shown_question(at)
