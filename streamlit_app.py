@@ -25,8 +25,8 @@ from wearable.agent import ANSWERED, DEFAULT_MODEL, AgentResult, append_trace, a
 from wearable.app_text import (ABOUT_DATA, AUTHOR, DATASET_CREDIT, INTRO, LIMITS, PIPELINE,
                                PIPELINE_DOT, RAW_SAMPLE_NOTE, RAW_TABLES)
 from wearable.presentation import (NOT_CONFIGURED, STATUS_MESSAGES, ChartSpec, UsageLimiter,
-                                   api_error_message, chart_for, credits, person_names,
-                                   person_profile)
+                                   ACCENT, api_error_message, chart_for, credits, person_names,
+                                   person_option, person_profile, to_altair)
 from wearable.schema import to_daily_frame
 
 REPO = Path(__file__).resolve().parent
@@ -145,12 +145,8 @@ def escape_markdown(text: str) -> str:
 
 def show_chart(spec: ChartSpec) -> None:
     st.caption(spec.title)
-    if spec.kind == "scatter":
-        st.scatter_chart(spec.data, x=spec.x, y=spec.y, x_label=spec.x_label,
-                         y_label=spec.y_label)
-    else:
-        st.bar_chart(spec.data, x=spec.x, y=spec.y, x_label=spec.x_label,
-                     y_label=spec.y_label)
+    accent = st.get_option("theme.primaryColor") or ACCENT
+    st.altair_chart(to_altair(spec, accent), width="stretch")
 
 
 def show_result(result: AgentResult, df: pd.DataFrame, user_id: str, name: str) -> None:
@@ -282,7 +278,8 @@ def main() -> None:
     users = load_users()
     names = person_names(list(users))
     with st.sidebar:
-        user_id = st.selectbox("Person", sorted(users), format_func=names.get, key="person")
+        user_id = st.selectbox("Person", sorted(users), key="person",
+                               format_func=lambda uid: person_option(names[uid], users[uid]))
         st.caption(person_profile(users[user_id]))
         st.caption("Three people from a public 2016 Fitbit dataset. The Data tab shows their "
                    "data in full.")
