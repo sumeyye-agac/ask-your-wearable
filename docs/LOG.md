@@ -310,3 +310,17 @@ One entry per working session. Newest at the bottom. Format is in `CLAUDE.md`.
 - Open issues: error messages are still coloured alert boxes, kept on purpose so a failure is
   noticed. Logo, Material icons and a stronger teal accent were requested next and are not in
   this entry.
+
+### 2026-11-11
+- Example pills now fill the question box instead of sending: clicking one replaces whatever
+  is in the box, and nothing is sent until Ask or Enter. The rule that keeps the earlier state
+  leak away: exactly the box's text at the moment of Ask is sent, then the box is emptied.
+  New tests: a pick sends nothing; a second pick replaces the first; a pick replaces half-typed
+  text; an edited example sends exactly the edited text; after Ask the box is empty and the next
+  typed question is sent alone. 188 tests.
+- Checked in the browser (Playwright, installed Chrome): clicking "Which day was I most
+  active?" put it in the box with no answer and no trace; pressing Enter sent exactly that
+  question once (one real call, $0.0016).
+- How to check it: `.venv/bin/python -m pytest && .venv/bin/streamlit run streamlit_app.py`, then open http://localhost:8501
+- Open issues: logo (three options shown for a choice), Material icons and the stronger teal
+  accent are pending the logo choice.
