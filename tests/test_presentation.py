@@ -229,3 +229,15 @@ def test_default_accent_matches_the_theme():
     config = (Path(__file__).resolve().parents[1] / ".streamlit/config.toml").read_text()
     assert f'primaryColor = "{ACCENT}"' in config
 
+
+
+def test_every_chart_title_carries_its_metric_icons():
+    from wearable.presentation import METRIC_ICONS, chart_heading
+    for spec in all_specs():
+        assert spec.icons and set(spec.icons) <= set(METRIC_ICONS.values())
+        heading = chart_heading(spec)
+        assert heading.startswith(":material/") and heading.endswith(spec.title)
+    df = full_frame()
+    corr = chart_for([call(df, "correlation", {"metric_x": "minutes_asleep",
+                                               "metric_y": "steps"})], df)
+    assert corr.icons == ["bedtime", "directions_walk"]
