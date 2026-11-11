@@ -212,8 +212,6 @@ Future work, not planned for this version:
 
 - Compare models on the evaluation question set (tool-selection accuracy, numeric accuracy,
   unsupported-claim rate), not only Claude Haiku 5.5.
-- An MCP server that exposes the same tools, continuing
-  [mcp-har-benchmark](https://github.com/sumeyye-agac/mcp-har-benchmark).
 - A raw-signal layer: IMU data from a Movesense sensor, with my own human activity recognition
   model as a tool.
 - An on-device version with a small model, to measure what is lost against the API model.
