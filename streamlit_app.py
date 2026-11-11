@@ -5,7 +5,7 @@
 Each question is answered on its own by the tool-use loop in wearable.agent, on one demo
 user's daily table. The API key is read from ANTHROPIC_API_KEY (a .env file in the repo
 root is loaded if present); the model id from WEARABLE_MODEL. Every question's trace is
-appended to logs/trace.jsonl, which is git-ignored.
+appended to logs/trace.jsonl (git-ignored), or to the file named by WEARABLE_TRACE.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from wearable.schema import to_daily_frame
 
 REPO = Path(__file__).resolve().parent
 DEMO = REPO / "data/demo/demo_daily.csv"
-TRACE = REPO / "logs/trace.jsonl"
+TRACE = Path(os.environ.get("WEARABLE_TRACE", REPO / "logs/trace.jsonl"))
 
 QUESTIONS_PER_VISITOR = 10    # per UTC day
 APP_DAILY_USD = 1.00          # estimated spend per UTC day for the whole app (~500 questions)
@@ -95,12 +95,12 @@ def answer(question: str, user_id: str, df: pd.DataFrame) -> None:
     visitor = visitor_id()
     refusal = limiter().start(visitor)
     if refusal:
-        st.session_state.outcome = {"error": refusal}
+        st.session_state.outcome = {"error": refusal, "question": question}
         return
     api = client()
     if api is None:
         limiter().finish(visitor, 0.0, failed=True)
-        st.session_state.outcome = {"error": NOT_CONFIGURED}
+        st.session_state.outcome = {"error": NOT_CONFIGURED, "question": question}
         return
     model = os.environ.get("WEARABLE_MODEL", DEFAULT_MODEL)
     try:
@@ -111,24 +111,34 @@ def answer(question: str, user_id: str, df: pd.DataFrame) -> None:
         print(f"API error {err.status_code} {getattr(err, 'type', None)}: {err.message}",
               file=sys.stderr)
         st.session_state.outcome = {"error": api_error_message(err.status_code,
-                                                               getattr(err, "type", None))}
+                                                               getattr(err, "type", None)),
+                                     "question": question}
         return
     except anthropic.APIConnectionError as err:  # includes timeouts
         limiter().finish(visitor, 0.0, failed=True)
         print(f"API connection error: {err}", file=sys.stderr)
-        st.session_state.outcome = {"error": api_error_message(None, None)}
+        st.session_state.outcome = {"error": api_error_message(None, None),
+                                     "question": question}
         return
     except Exception as err:  # never show a stack trace to a visitor
         limiter().finish(visitor, 0.0, failed=True)
         print(f"Unexpected error: {err!r}", file=sys.stderr)
-        st.session_state.outcome = {"error": api_error_message(0, None)}
+        st.session_state.outcome = {"error": api_error_message(0, None),
+                                     "question": question}
         return
     limiter().finish(visitor, result.cost_usd)
     try:
         append_trace(result, TRACE, user_id)
     except OSError as err:  # a read-only disk must not cost the visitor the answer
         print(f"Could not write the trace: {err}", file=sys.stderr)
-    st.session_state.outcome = {"result": result, "user_id": user_id}
+    st.session_state.outcome = {"result": result, "user_id": user_id, "question": question}
+
+
+def escape_markdown(text: str) -> str:
+    """Show a visitor's text as typed, not as markdown, LaTeX or HTML."""
+    for ch in "\\`*_{}[]<>()#+-.!|$~":
+        text = text.replace(ch, "\\" + ch)
+    return text
 
 
 def show_chart(spec: ChartSpec) -> None:
@@ -174,8 +184,16 @@ def show_result(result: AgentResult, df: pd.DataFrame) -> None:
 
 
 def use_example(question: str) -> None:
-    st.session_state.question = question
-    st.session_state.submit = True
+    # Queued for this run only. The text box is left alone, so an example never mixes
+    # with what the visitor types next.
+    st.session_state.pending = question
+
+
+def use_typed() -> None:
+    # Move the typed text into the same one-shot queue and empty the box, so the next
+    # question starts from a blank box and nothing is sent twice.
+    st.session_state.pending = st.session_state.get("question", "")
+    st.session_state.question = ""
 
 
 def main() -> None:
@@ -200,17 +218,20 @@ def main() -> None:
         columns[i % 2].button(example, key=f"example_{i}", on_click=use_example,
                               args=(example,), width="stretch")
 
-    with st.form("ask", clear_on_submit=False):
+    # The box is emptied after every submit; the question answered is shown above the answer.
+    with st.form("ask"):
         st.text_input("Your question", key="question", max_chars=MAX_QUESTION_CHARS,
                       placeholder="For example: How did my steps change over the two months?")
-        submitted = st.form_submit_button("Ask")
+        st.form_submit_button("Ask", on_click=use_typed)
 
-    question = st.session_state.get("question", "").strip()
-    if (submitted or st.session_state.pop("submit", False)) and question:
+    # Exactly one question per action: the example clicked, or what was typed and submitted.
+    question = (st.session_state.pop("pending", None) or "").strip()
+    if question:
         answer(question, user_id, df)
 
     outcome = st.session_state.get("outcome")
     if outcome:
+        st.markdown(f"**Question:** {escape_markdown(outcome['question'])}")
         if "error" in outcome:
             st.error(outcome["error"])
         else:
