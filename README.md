@@ -103,3 +103,25 @@ cd ../..
 .venv/bin/python scripts/build_daily.py data/raw     # daily tables + coverage summary above
 .venv/bin/python -m pytest
 ```
+
+### Asking questions from the terminal
+
+This part calls the Claude API and needs a key. Put `ANTHROPIC_API_KEY=...` in a `.env` file in
+the repo root (git-ignored) or export it. The demo data is committed, so the raw zips are not
+needed.
+
+```bash
+.venv/bin/python scripts/ask.py --list-users
+.venv/bin/python scripts/ask.py --user 6962181067 "How was my sleep this week?"
+.venv/bin/python scripts/ask.py --user 6962181067    # interactive; empty line to quit
+```
+
+Each question prints the tool calls the model made, their results, the answer, and the token
+count with an estimated cost. The full trace is appended to `logs/trace.jsonl` (git-ignored).
+Questions are answered one at a time, with no memory between them.
+
+The model is `claude-haiku-5-5`; set `WEARABLE_MODEL` to change it. A question stops after
+6 model requests or an estimated $0.01, whichever comes first, and then reports that it stopped
+instead of answering. The cost estimate uses the published prices ($0.10 per million input
+tokens, $0.50 per million output tokens, checked 2026-11-11). It is a guard inside the program,
+not a replacement for the spend limit set in the Claude Console.
