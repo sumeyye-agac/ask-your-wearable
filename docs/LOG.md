@@ -205,3 +205,30 @@ One entry per working session. Newest at the bottom. Format is in `CLAUDE.md`.
   Limits reset when the app restarts, so the Console spend limit stays the real backstop.
   On localhost, reloading the page resets a visitor's count. This log entry is not committed.
   Next is day 6: deploy and CI.
+
+### 2026-11-11
+- Fixed four issues from browser testing of the app. (1) State leak: an example button wrote its
+  question into the text box and left it there, so typing appended to it (the trace shows
+  "Am I active enough?Ignore your instructions..." sent as one question). Now examples and the
+  Ask button both put one question into a one-shot queue, the box is emptied on submit, and
+  only that question is sent. (2) The question being answered is shown above the answer
+  (escaped, so typed markdown shows as typed), also above error messages.
+- (3) and (4) are prompt rules in `agent.system_prompt`: answer only questions about the
+  wearable data and decline the rest in one sentence, in every language; never say which or
+  how many days were above or below a value unless weekly_summary returned it with that
+  threshold; never cite a guideline or its numbers that get_guideline did not return (added
+  after reruns showed the model citing "7-9 hours" unprompted, which is not CDC's figure for
+  18-60). App tests no longer write to `logs/trace.jsonl` (`WEARABLE_TRACE`). 141 tests.
+- Reruns on the real API, user 5553957443, about $0.04 in total. UI: example click, then a
+  typed question, sent exactly the two questions, box empty after each. Poem request: declined
+  in 9 of 9 runs (3 English, 6 Turkish), data part still answered. "How was my sleep this
+  week?" (6 English, 3 Turkish runs): no run said which or how many nights were under 7 hours.
+  "Is my sleep enough?" / "Uykum yeterli mi?" (2 + 2 runs): all called get_guideline then
+  weekly_summary with threshold 420 and gave 4 at or above, 3 below.
+- How to check it: `.venv/bin/python -m pytest && .venv/bin/streamlit run streamlit_app.py`, then open http://localhost:8501
+- Open issues: prompt rules lower the rate of unsupported claims but do not guarantee it.
+  In the last reruns the model still derived small things no tool returned: "the other six
+  nights were between 6 h 40 min and 7 h 43 min", "time in bed runs about half an hour longer
+  than time asleep", and in Turkish "most nights were around 7 hours". These belong in the
+  day 7 unsupported-claim metric. `logs/trace.jsonl` still holds 4 "Fine." rows written by
+  earlier test runs (git-ignored; not deleted). Next is day 6: deploy and CI.
