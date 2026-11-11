@@ -3,54 +3,39 @@
 All work in this repo is in English: code, comments, docs, commits, and chat replies.
 
 ## Current phase
-The proposal is in `docs/PROJECT_BRIEF.md` and is **not approved yet**.
-Until I approve a plan, do not write application code. Review, verify and plan only.
+The plan in `docs/PROJECT_BRIEF.md` is **approved** (2026-11-11). Day 1 has not started.
+`docs/REVIEW.md` is the record of why the plan looks the way it does — don't reopen settled
+decisions without a reason.
 
-## What we are building (summary)
+## What we are building
 A deployed web app where anyone can ask natural-language questions about wearable data
 (sleep, activity, heart rate) and get grounded answers. The LLM calls deterministic, tested
-Python tools and only turns their results into plain language. Sample data is built in;
-users can upload their own export. Details and open questions are in the brief.
+Python tools and only turns their results into plain language. Sample data is built in; users
+can upload their own CSV matching a documented schema. Scope, stack and the 8-day plan are in
+`docs/PROJECT_BRIEF.md`.
 
 ## How to work with me
-I am an ML engineer (PhD in wearable sensing and model compression). I must understand
-everything that ends up in this repo. A working product I don't understand is a failure.
+I am an ML engineer (PhD in wearable sensing and model compression).
 
-- **Plan before building.** Before any non-trivial step, explain what you will do and why,
-  and wait for my OK. Use plan mode for anything touching several files.
-- **Verify, don't assume.** For any library, API, dataset or service, check current
-  documentation on the web before using it. Say clearly when something is unverified.
-- **Small steps.** One feature at a time. Make it run, show me how to run it myself, then move on.
-- **Explain new things.** When you introduce a library, API, pattern or concept,
-  add a short plain explanation to `docs/LEARNING.md`.
+- **Verify, don't assume.** For any library, API, dataset or service, check current documentation
+  on the web before using it. Say clearly when something is unverified.
 - **Don't hide failures.** If something is broken, a workaround, or a guess, say so.
   Never fake results or hardcode outputs to make a demo look like it works.
-- **Ask when a decision is mine** (scope, design trade-offs, cost, anything hard to undo).
+- **Ask before big or hard-to-undo steps** — scope, cost, deleting things, anything outward-facing.
 - **Protect the scope.** If a task grows beyond the approved plan, stop and tell me.
+- **Work in small steps.** Make each piece run and pass its tests before starting the next.
 
-## Documentation I must be able to read at the end of every day
-These files are the single source of truth, not the chat. Short, structured, no filler.
+## Logging
+One file: `docs/LOG.md`. At the end of each session, append:
 
-- `docs/PROJECT_BRIEF.md`: the proposal and, once approved, the agreed scope.
-- `docs/ROADMAP.md`: checklist of phases and tasks with status (todo / in progress / done).
-- `docs/ARCHITECTURE.md`: a Mermaid diagram plus one paragraph per component
-  (what it does, which file it lives in). Update it whenever the structure changes.
-- `docs/DECISIONS.md`: numbered log. Each entry: date, question, options, choice, reason.
-- `docs/journal/YYYY-MM-DD.md`: one file per working day (template below).
-- `docs/LEARNING.md`: concepts and tools, each in 2-4 plain sentences, with where it is used.
-
-### Daily journal template
 ```
-# YYYY-MM-DD
-
-## Summary (3 sentences max)
-## What was done
-- step, files touched, how to run/verify it
-## Decisions made (link to DECISIONS.md entries)
-## Problems hit and how they were solved
-## What I should understand from today (key concepts, with LEARNING.md links)
-## Open issues / next steps
+### YYYY-MM-DD
+- What was done (2-5 bullets)
+- How to run / check it (one line)
+- Open issues
 ```
+
+Newest entry at the bottom. No other documentation duty.
 
 ## Related work of mine
 - `sumeyye-agac/mcp-har-benchmark`: my MCP server over a HAR leaderboard, with an ablation on
@@ -78,3 +63,5 @@ These files are the single source of truth, not the chat. Short, structured, no 
 ## Code style
 - Python 3.11+, type hints, small functions, a README section on how to run each part.
 - Every tool function is deterministic and has pytest tests.
+
+
