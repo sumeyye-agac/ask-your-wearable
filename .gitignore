@@ -224,3 +224,4 @@ data/private/
 data/raw/
 .claude/settings.local.json
 data/processed/
+logs/
