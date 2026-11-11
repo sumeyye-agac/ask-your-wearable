@@ -349,3 +349,41 @@ One entry per working session. Newest at the bottom. Format is in `CLAUDE.md`.
 - Open issues: for "How was my sleep this week?" the chart showed hours in bed, because the
   chart follows the model's last chartable tool call (here minutes_in_bed after minutes_asleep).
   Not changed; a rule such as preferring the metric the question names would need a decision.
+
+### 2026-11-11
+- Ask tab redesigned after a UX review (about 3/10). Top to bottom: a slim row with the small
+  logo and name on the left and the tabs on the right; the headline "Ask your wearable data.
+  Get answers you can check." with one muted subline; a search-bar question box with Ask inside
+  it; the example pills; the wellness note; three person cards (letter avatar, nights of
+  sleep, days of steps, days of heart rate, selected card outlined in teal); the answer area;
+  a three-step "How it works" strip whose button opens that tab; the footer. The header band,
+  the pulse line and the grey profile sentence are gone. Example pills still only fill the box.
+- Before the first question the answer area shows an "Example answer" card: a real run copied
+  from `logs/trace.jsonl` to `data/demo/example_answer.json` ("Which day was I most active?",
+  Person A, 16:46 UTC today, $0.0016). I checked each number in its text against its tool
+  result by reading. A test reruns its tool calls and requires the stored results to match.
+  It disappears with the first question, also a failed one, and stays away for the session.
+- Answer card: question, then 1-3 `st.metric` headline numbers, explanation, chart, trace.
+  `presentation.headline_numbers` reads them from the same tool call the chart uses and only
+  formats them; a test on the three demo people checks every number shown is in the tool's
+  output. Charts have a transparent background so they sit on the white card.
+- Visual system in one file, `assets/style.css`: page #EDF3F2 (was #F4F8F7), white cards with
+  soft shadows, teal #2A7F7A as primary with a darker #17504D for headings, amber #F2A93B only
+  for the example label and that card's top edge, small uppercase section labels. The How it
+  works and Data tabs use the same cards; their content is unchanged. 212 tests.
+- Checked in headless Chrome (Playwright) at 1440x800 and 390x844. At 1440x800 the headline,
+  question box, pills and note end at 514 px and all three person cards at 678 px, so they are
+  above the fold; the example card starts at 694 px. At 390 px the box, pills and note end at
+  661 px, the cards stack, and there is no horizontal scroll on any tab. One real question
+  through the page ("Is my sleep enough?", Person B, $0.0026): the example went away, the box
+  emptied, and the headline numbers (9 h 14 min, 2 of 2, 2 of 7) matched the tool result.
+- How to check it: `.venv/bin/python -m pytest && .venv/bin/streamlit run streamlit_app.py`, then open http://localhost:8501
+- Open issues: the primary colour is still #2A7F7A, not a darker teal, because the logo, the
+  charts and the diagram use it; say if it should change. Much of the CSS targets Streamlit's
+  markup (`data-testid`, `role`), not a public API, so a Streamlit upgrade can break the look
+  silently; the tests only check that the rules exist. The tabs now rerun the script on every
+  switch (`on_change="rerun"`), which the strip's button needs. On a phone the three person
+  cards and the three headline numbers stack and take about a screen each. The example is
+  Person A's even when another person is selected (it is labelled). Headline numbers follow
+  the model's last tool call, like the chart, so "How was my sleep this week?" can still lead
+  with time in bed. My screenshot script sent one unintended real question ($0.0015).
