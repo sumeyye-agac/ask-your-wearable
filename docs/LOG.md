@@ -153,3 +153,28 @@ One entry per working session. Newest at the bottom. Format is in `CLAUDE.md`.
   sources I read. One answer used bullet points although the prompt asks for plain sentences.
   The build prints 34 users, the README says 35 in the exports; not looked into. Next is day 5:
   the Streamlit UI.
+
+### 2026-11-11
+- Approved: an active-minutes day needs all 1440 minutes and one minute above sedentary; a week
+  with missing days gives "reached" or "unknown"; `weekly_active_minutes` stays as a tool.
+- Corrected my claim that CDC gives no conversion. Its page "What Counts as Physical Activity
+  for Adults" (page date 2023-12-06, read today) says 1 minute of vigorous activity is about the
+  same as 2 minutes of moderate activity. `weekly_active_minutes` now leads with `combined`:
+  fairly active + 2 x very active minutes against 150, with the rule and its source in the
+  result. The separate moderate and vigorous figures stay as detail.
+- Decision 3 changed, with approval: "this week" is the 7 days ending on the user's last
+  complete day (last date with steps or active minutes), not the last date with any data. For
+  the demo users that is 5-11 May instead of 6-12 May. I applied the same anchor to the
+  "last 4 weeks" preset so the two recent periods agree; this was not asked for explicitly.
+- Dropped the prompt rule against bullet points. 105 tests passing.
+- 34 vs 35 users: both numbers are right. The exports hold 35 ids; user 2891001357 has 12 hours
+  on one day only, so no valid day and 34 users in the daily table. The README now says so.
+- Reran "Am I active enough?" and "How was my sleep this week?" for 6962181067 and 5553957443.
+  Both weeks are now complete (7 of 7 days). Combined minutes: 384 and 484 against 150; both
+  answers led with that, cited the rule of thumb and gave the Fitbit caveat. Sleep: mean
+  7 h 31 min and 7 h 32 min, 6 of 7 and 4 of 7 nights at or above 7 h.
+- How to check it: `.venv/bin/python -m pytest && .venv/bin/python scripts/ask.py --user 6962181067 "Am I active enough?"`
+- Open issues: for "How was my sleep this week?" the model compared with 7 hours without
+  calling `get_guideline`, and one answer mentioned "general adult guidelines" without naming a
+  source. Both activity answers called the window "last week" although the prompt defines it as
+  "this week". These belong in the day 7 evaluation. Next is day 5: the Streamlit UI.
