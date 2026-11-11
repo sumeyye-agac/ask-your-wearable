@@ -6,8 +6,9 @@ import pytest
 
 from wearable.schema import to_daily_frame
 from wearable.guidelines import ACTIVITY_CAVEAT
-from wearable.tools import (compare_periods, correlation, correlation_ci, missing_data_report,
-                            most_active_day, weekly_active_minutes, weekly_summary)
+from wearable.tools import (compare_periods, correlation, correlation_ci, last_complete_day,
+                            missing_data_report, most_active_day, weekly_active_minutes,
+                            weekly_summary)
 
 
 def _frame(**columns) -> pd.DataFrame:
@@ -408,7 +409,16 @@ def test_weekly_active_minutes_complete_week_reaching_the_moderate_target():
         "fitbit_metric": "very_active_minutes", "total_minutes": 35,
         "recommended_minutes": 75, "total_minus_recommended": -40,
         "reaches_recommendation": False}
-    assert out["reaches_either_alone"] is True
+    # Main result: 151 + 2 x 35 = 221 moderate-equivalent minutes, 71 above 150.
+    combined = out["combined"]
+    assert combined["moderate_equivalent_minutes"] == 221
+    assert combined["formula"] == "fairly active minutes + 2 x very active minutes"
+    assert (combined["recommended_minutes"], combined["total_minus_recommended"]) == (150, 71)
+    assert combined["reaches_recommendation"] is True
+    assert "1 minute of vigorous-intensity activity is about the same as 2 minutes" in \
+        combined["conversion"]["rule"]
+    assert combined["conversion"]["url"].endswith("/adding-adults/what-counts.html")
+    assert list(out).index("combined") < list(out).index("moderate")  # main result first
     assert out["daily"][2] == {"date": "2024-01-03", "fairly_active_minutes": 30,
                                "very_active_minutes": 10}
 
@@ -418,8 +428,13 @@ def test_weekly_active_minutes_complete_week_below_both_targets():
     assert out["moderate"]["total_minus_recommended"] == -80
     assert out["vigorous"]["total_minus_recommended"] == -5
     assert out["moderate"]["reaches_recommendation"] is False
-    assert out["reaches_either_alone"] is False
-    assert "no conversion" in out["combination"]
+    assert out["vigorous"]["reaches_recommendation"] is False
+    # Neither target is reached alone, but together they are: 70 + 2 x 70 = 210.
+    assert out["combined"]["moderate_equivalent_minutes"] == 210
+    assert out["combined"]["reaches_recommendation"] is True
+    low = weekly_active_minutes(_active([10] * 7, [5] * 7))   # 70 + 2 x 35 = 140
+    assert low["combined"]["total_minus_recommended"] == -10
+    assert low["combined"]["reaches_recommendation"] is False
 
 
 def test_weekly_active_minutes_incomplete_week_is_unknown_not_missed():
@@ -431,18 +446,22 @@ def test_weekly_active_minutes_incomplete_week_is_unknown_not_missed():
     assert out["moderate"]["total_minutes"] == 100
     assert out["moderate"]["reaches_recommendation"] is None   # may still have been reached
     assert out["vigorous"]["reaches_recommendation"] is True   # already reached
-    assert out["reaches_either_alone"] is True
+    assert out["combined"]["moderate_equivalent_minutes"] == 260
+    assert out["combined"]["reaches_recommendation"] is True
     assert "Only 5 of 7 days" in out["note"] and "lower bound" in out["note"]
     assert out["daily"][2]["fairly_active_minutes"] is None
     below = weekly_active_minutes(_active([20, None, 20, 20, 20, 20, 20], [0, None] + [0] * 5))
-    assert below["reaches_either_alone"] is None
+    assert below["combined"]["moderate_equivalent_minutes"] == 120
+    assert below["combined"]["reaches_recommendation"] is None  # unknown, not missed
 
 
 def test_weekly_active_minutes_without_data_and_with_an_end_date(two_weeks):
     out = weekly_active_minutes(two_weeks)   # the fixture has no active minutes
     assert out["days_with_data"] == 0 and out["moderate"]["total_minutes"] is None
     assert out["moderate"]["reaches_recommendation"] is None
-    assert out["reaches_either_alone"] is None and out["note"] == "No active-minute data in this week."
+    assert out["combined"]["moderate_equivalent_minutes"] is None
+    assert out["combined"]["reaches_recommendation"] is None
+    assert out["note"] == "No active-minute data in this week."
     dated = weekly_active_minutes(_active([30] * 10, [0] * 10), end_date="2024-01-08")
     assert (dated["start"], dated["end"]) == ("2024-01-02", "2024-01-08")
     assert dated["moderate"]["total_minutes"] == 210
@@ -454,3 +473,52 @@ def test_weekly_active_minutes_always_carries_the_caveat_and_the_source():
     assert "not the same" in out["caveat"] and "Fitbit" in out["caveat"] and "CDC" in out["caveat"]
     assert out["recommendation_source"].startswith("CDC") and out["credit"].startswith("Source: CDC.")
     assert out["url"] == "https://www.cdc.gov/physical-activity-basics/guidelines/adults.html"
+
+
+# --- the last complete day -----------------------------------------------------
+
+def _partial_last_day() -> pd.DataFrame:
+    """8 days; on the last one the export stopped early: sleep and heart rate, no steps."""
+    return _frame(steps=[1000, 2000, 3000, 4000, 5000, 6000, 7000, None],
+                  fairly_active_minutes=[10, 20, 30, 0, 40, 25, 26, None],
+                  very_active_minutes=[0] * 7 + [None],
+                  minutes_asleep=[400.0] * 7 + [500.0], mean_hr=[70.0] * 8)
+
+
+def test_last_complete_day_skips_a_partial_final_day():
+    df = _partial_last_day()
+    assert last_complete_day(df) == pd.Timestamp("2024-01-07")
+    # Either whole-day metric is enough to make a day complete.
+    df.loc["2024-01-08", "very_active_minutes"] = 0.0
+    assert last_complete_day(df) == pd.Timestamp("2024-01-08")
+
+
+def test_last_complete_day_falls_back_when_there_is_no_whole_day_metric():
+    assert last_complete_day(_frame(minutes_asleep=[400.0, 410.0, 420.0])) == \
+        pd.Timestamp("2024-01-03")
+
+
+def test_this_week_ends_on_the_last_complete_day_for_every_metric():
+    df = _partial_last_day()
+    steps = weekly_summary(df, "steps")
+    assert (steps["start"], steps["end"]) == ("2024-01-01", "2024-01-07")
+    assert steps["days_with_data"] == 7 and steps["missing_dates"] == []
+    # Sleep uses the same week, so the night ending on the partial day is not in it.
+    sleep = weekly_summary(df, "minutes_asleep")
+    assert (sleep["start"], sleep["end"]) == ("2024-01-01", "2024-01-07")
+    assert sleep["mean"] == 400.0
+    active = weekly_active_minutes(df)
+    assert active["end"] == "2024-01-07" and active["complete_week"] is True
+    # An explicit end date still reaches the partial day.
+    assert weekly_summary(df, "minutes_asleep", end_date="2024-01-08")["highest"]["value"] == 500.0
+
+
+def test_last_4_weeks_preset_ends_on_the_last_complete_day():
+    n = 60
+    df = _frame(steps=[1000.0] * (n - 1) + [None], minutes_asleep=[420.0] * n)
+    out = compare_periods(df, "minutes_asleep", preset="last_4_weeks_vs_previous_4_weeks")
+    assert out["period_b"]["end"] == "2024-02-28"      # day 59, not the partial day 60
+    assert out["period_b"]["start"] == "2024-02-01" and out["period_a"]["end"] == "2024-01-31"
+    # The whole-range split still uses every date with data.
+    halves = compare_periods(df, "minutes_asleep", preset="first_half_vs_second_half")
+    assert halves["period_b"]["end"] == "2024-02-29"

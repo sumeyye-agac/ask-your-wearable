@@ -24,6 +24,17 @@ _LICENCE = ("Public domain (CDC website text), reproduced with credit and withou
 # Weekly aerobic targets on the CDC page, in minutes. tools.weekly_active_minutes uses them.
 ACTIVITY_WEEKLY_MINUTES = {"moderate": 150, "vigorous": 75}
 
+# CDC's rule of thumb for combining the two, from its page "What Counts as Physical
+# Activity for Adults" (page date 2023-12-06, read 2026-11-11).
+VIGOROUS_TO_MODERATE = 2
+ACTIVITY_CONVERSION = {
+    "rule": "A rule of thumb is that 1 minute of vigorous-intensity activity is about the "
+            "same as 2 minutes of moderate-intensity activity.",
+    "source": "CDC, What Counts as Physical Activity for Adults",
+    "url": "https://www.cdc.gov/physical-activity-basics/adding-adults/what-counts.html",
+    "page_date": "2023-12-06",
+}
+
 ACTIVITY_CAVEAT = (
     "Fitbit's fairly active and very active minutes are the device's own per-minute "
     "estimate of intensity. CDC defines moderate and vigorous intensity by effort (3 to "
@@ -71,9 +82,10 @@ GUIDELINES: dict[str, dict[str, Any]] = {
                              "(vigorous)",
         "threshold": {"moderate_minutes_per_week": ACTIVITY_WEEKLY_MINUTES["moderate"],
                       "vigorous_minutes_per_week": ACTIVITY_WEEKLY_MINUTES["vigorous"],
-                      "meaning": "Call weekly_active_minutes to compare a week with these."},
-        "applies_to_data": ACTIVITY_CAVEAT + " The CDC page gives no conversion for an "
-                           "equivalent combination and no step-count target. The data has "
+                      "meaning": "Call weekly_active_minutes to compare a week with these; "
+                                 "it combines the two with the conversion below."},
+        "conversion": ACTIVITY_CONVERSION,
+        "applies_to_data": ACTIVITY_CAVEAT + " CDC gives no step-count target. The data has "
                            "nothing on muscle-strengthening activity, so that part cannot "
                            "be checked.",
         "intensity_definition_source": "CDC, How to Measure Physical Activity Intensity, "
