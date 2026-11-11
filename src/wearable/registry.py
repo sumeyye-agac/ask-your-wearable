@@ -23,8 +23,10 @@ from wearable.schema import METRICS
 _METRIC = {
     "type": "string", "enum": list(METRICS),
     "description": "steps (steps/day), minutes_asleep (minutes/night), minutes_in_bed "
-                   "(minutes/night) or mean_hr (bpm, mean of the day's readings; not "
-                   "resting heart rate). Sleep is dated by the wake-up day.",
+                   "(minutes/night), mean_hr (bpm, mean of the day's readings; not "
+                   "resting heart rate), fairly_active_minutes or very_active_minutes "
+                   "(minutes/day at Fitbit intensity level 2 or 3; Fitbit's own estimate "
+                   "of moderate and vigorous activity). Sleep is dated by the wake-up day.",
 }
 
 
@@ -48,9 +50,10 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "about a week ('how was my sleep this week?'). Returns the window, days with data, "
         "the missing dates, mean, median, the highest and lowest day with their distance "
         "from the mean, the range (highest minus lowest), every day's value (null when "
-        "there is no measurement) and, for steps, the weekly total. With a threshold it "
-        "also returns days_at_or_above, days_below and mean_minus_threshold. For metrics in "
-        "minutes every value also comes as hours and minutes in a '_text' field. Call it "
+        "there is no measurement) and, for steps and active minutes, the weekly total. "
+        "Steps and active minutes are whole numbers. With a threshold it also returns "
+        "days_at_or_above, days_below and mean_minus_threshold. For the sleep metrics "
+        "every value also comes as hours and minutes in a '_text' field. Call it "
         "once per metric.",
         {"metric": _METRIC,
          "end_date": _date("Last day of the week. Omit for 'this week': the 7 days ending "
@@ -85,7 +88,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
     ),
     _spec(
         "missing_data_report",
-        "Report, for all four metrics at once, how complete the data is in a date range. "
+        "Report, for every metric at once, how complete the data is in a date range. "
         "Use it for questions about gaps or how much data there is, and before trusting a "
         "result that depends on coverage. Returns, per metric, days with data, days missing, "
         "coverage in percent, the longest run of consecutive missing days and the missing "
@@ -132,13 +135,28 @@ TOOL_SPECS: list[dict[str, Any]] = [
         ["metric_x", "metric_y"],
     ),
     _spec(
+        "weekly_active_minutes",
+        "Add up one week's active minutes and compare them with CDC's weekly "
+        "recommendation for adults. Use it for 'am I active enough?'. Moderate activity is "
+        "taken as Fitbit's fairly active minutes and vigorous as Fitbit's very active "
+        "minutes. Returns, for each, total_minutes, recommended_minutes (150 moderate, 75 "
+        "vigorous), total_minus_recommended and reaches_recommendation (true, false, or "
+        "null when days are missing and the total so far is below the target), plus "
+        "reaches_either_alone, days_with_data, missing_dates, each day's minutes, and a "
+        "caveat. The caveat says Fitbit's intensity estimate is not CDC's definition; "
+        "always pass it on in the answer.",
+        {"end_date": _date("Last day of the week. Omit for 'this week': the 7 days ending "
+                           "on the last date with data.")},
+        [],
+    ),
+    _spec(
         "get_guideline",
         "Look up a public health recommendation from a small curated reference (CDC pages). "
         "Use it when a question asks whether an amount is enough, healthy or recommended. "
         "Returns the recommendation statements with the population each applies to, the "
         "source with its URL and date, a credit line, and whether the data can be compared "
-        "with it: comparable_metric and threshold are null when it cannot, and "
-        "applies_to_data says why. It does not look at the person's data.",
+        "with it: comparable_metric and threshold say how, and applies_to_data "
+        "gives the limits of that comparison. It does not look at the person's data.",
         {"topic": {"type": "string", "enum": list(TOPICS),
                    "description": "sleep_duration (hours of sleep per day for adults, by "
                                   "age) or physical_activity (weekly activity for adults)."}},
@@ -158,6 +176,7 @@ TOOL_FUNCTIONS: dict[str, Callable[..., dict[str, Any]]] = {
     "missing_data_report": tools.missing_data_report,
     "most_active_day": tools.most_active_day,
     "correlation": tools.correlation,
+    "weekly_active_minutes": tools.weekly_active_minutes,
     "get_guideline": _get_guideline,
 }
 
