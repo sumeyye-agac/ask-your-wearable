@@ -17,6 +17,7 @@ from typing import Any, Callable
 import pandas as pd
 
 from wearable import tools
+from wearable.guidelines import TOPICS, get_guideline
 from wearable.schema import METRICS
 
 _METRIC = {
@@ -45,12 +46,19 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "weekly_summary",
         "Summarise one metric over the 7 days ending on end_date. Use it for questions "
         "about a week ('how was my sleep this week?'). Returns the window, days with data, "
-        "the missing dates, mean, median, the highest and lowest day, every day's value "
-        "(null when there is no measurement) and, for steps, the weekly total. Call it once "
-        "per metric.",
+        "the missing dates, mean, median, the highest and lowest day with their distance "
+        "from the mean, the range (highest minus lowest), every day's value (null when "
+        "there is no measurement) and, for steps, the weekly total. With a threshold it "
+        "also returns days_at_or_above, days_below and mean_minus_threshold. For metrics in "
+        "minutes every value also comes as hours and minutes in a '_text' field. Call it "
+        "once per metric.",
         {"metric": _METRIC,
          "end_date": _date("Last day of the week. Omit for 'this week': the 7 days ending "
-                           "on the last date with data.")},
+                           "on the last date with data."),
+         "threshold": {"type": "number",
+                       "description": "Optional value in the metric's unit to compare the "
+                                      "week against, for example 420 for 7 hours of sleep "
+                                      "or a threshold returned by get_guideline."}},
         ["metric"],
     ),
     _spec(
@@ -58,7 +66,9 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "Compare the daily mean of one metric between two periods that do not overlap. "
         "Give either a preset or all four dates, never both. Returns, per period, the mean, "
         "standard deviation and days with data, plus difference_b_minus_a in the metric's "
-        "unit and percent_change (positive means period B is higher). Period A is the "
+        "unit, percent_change (positive means period B is higher) and higher_period. For "
+        "metrics in minutes the means and the difference also come as hours and minutes in "
+        "'_text' fields. Period A is the "
         "earlier one in both presets. If a period has fewer than 3 days with data, "
         "enough_data is false and no difference is given. No significance test is done.",
         {"metric": _METRIC,
@@ -88,9 +98,11 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "most_active_day",
         "Find the day with the most steps in a date range, and the next most active days. "
         "Activity means steps per day; there is no other activity measure. Returns the most "
-        "active day (date, weekday, steps), the top_n days in descending order, days with "
-        "step data and the mean steps/day in the window. Days without step data are skipped, "
-        "never counted as inactive. For 'this week' pass the 7 days ending on the last date "
+        "active day (date, weekday, steps, steps_above_second: its lead over the second "
+        "most active day, steps_above_mean: its lead over the window's mean), the top_n "
+        "days in descending order, each with steps_above_mean, days with step data, the "
+        "dates without step data and the mean steps/day in the window. Days without step "
+        "data are skipped, never counted as inactive. For 'this week' pass the 7 days ending on the last date "
         "with data.",
         {"start_date": _date("First day. Omit for the first date with data."),
          "end_date": _date("Last day. Omit for the last date with data."),
@@ -119,7 +131,26 @@ TOOL_SPECS: list[dict[str, Any]] = [
          "end_date": _date("Last metric_x day. Omit for the whole data range.")},
         ["metric_x", "metric_y"],
     ),
+    _spec(
+        "get_guideline",
+        "Look up a public health recommendation from a small curated reference (CDC pages). "
+        "Use it when a question asks whether an amount is enough, healthy or recommended. "
+        "Returns the recommendation statements with the population each applies to, the "
+        "source with its URL and date, a credit line, and whether the data can be compared "
+        "with it: comparable_metric and threshold are null when it cannot, and "
+        "applies_to_data says why. It does not look at the person's data.",
+        {"topic": {"type": "string", "enum": list(TOPICS),
+                   "description": "sleep_duration (hours of sleep per day for adults, by "
+                                  "age) or physical_activity (weekly activity for adults)."}},
+        ["topic"],
+    ),
 ]
+
+
+def _get_guideline(df: pd.DataFrame, topic: str) -> dict[str, Any]:
+    """get_guideline does not depend on the user's data; df is accepted and ignored."""
+    return get_guideline(topic)
+
 
 TOOL_FUNCTIONS: dict[str, Callable[..., dict[str, Any]]] = {
     "weekly_summary": tools.weekly_summary,
@@ -127,6 +158,7 @@ TOOL_FUNCTIONS: dict[str, Callable[..., dict[str, Any]]] = {
     "missing_data_report": tools.missing_data_report,
     "most_active_day": tools.most_active_day,
     "correlation": tools.correlation,
+    "get_guideline": _get_guideline,
 }
 
 _ARGUMENTS = {s["name"]: set(s["input_schema"]["properties"]) for s in TOOL_SPECS}
