@@ -79,6 +79,10 @@ Even these have gaps; user `5577150313` has sleep on only 2 of the last 7 nights
   value, mostly by 1–20 minutes and once by 99 minutes. Not explained yet.
 - The 60-minute merge threshold is a choice, not a fact. Gaps between sleep logs have no clean
   natural break: 66 are 30 minutes or less, 86 are 60 or less, 116 are 120 or less.
+- The correlation tool's 95% intervals (Fisher z) assume every day is independent of the
+  others. Consecutive days are not: an active week or a run of short nights makes neighbouring
+  days alike. The intervals are therefore likely too narrow, and this is not corrected for.
+  A correlation also says nothing about cause.
 - Wellness information only. The app does not diagnose anything.
 
 ## Reproducing
