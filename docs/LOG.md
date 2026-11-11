@@ -387,3 +387,31 @@ One entry per working session. Newest at the bottom. Format is in `CLAUDE.md`.
   Person A's even when another person is selected (it is labelled). Headline numbers follow
   the model's last tool call, like the chart, so "How was my sleep this week?" can still lead
   with time in bed. My screenshot script sent one unintended real question ($0.0015).
+
+### 2026-11-11
+- Headline numbers and chart now follow the metric the question is about, not the last tool
+  call. `presentation.answer_call` ranks the successful calls by how many of the question's
+  metrics they cover, then by that metric's priority (for sleep: minutes asleep before time in
+  bed, unless the question says "in bed"), then by order; a question that names no metric still
+  gets the last call. Keywords are English and Turkish. Both headline and chart use the same
+  call. Found case reproduced in a test: Person B, asleep then in bed, now leads with sleep.
+- Weekdays: `registry.run_tool` puts the weekday beside every date in every tool result
+  ("date" gets "weekday", other keys "<key>_weekday", lists "<key>_weekdays"), so the model and
+  the future MCP server get them; the tool functions themselves are unchanged. The prompt says
+  to copy weekdays from those fields and never work one out. A test runs every tool on all
+  three demo people and checks every date's weekday. The stored example answer is kept as the
+  real run it was; its test now compares it with weekdays added.
+- Chart x-axes show short horizontal labels ("Wed 4 May"), labels that would overlap are left
+  out on long ranges, and the ISO date is in the tooltip. Found while checking: days without
+  data were dropped from bar charts (Vega-Lite drops rows with a missing value), so Person B's
+  week of 2 nights looked like 2 neighbouring days. The x domain now lists every day, so gaps
+  stay visible. 241 tests.
+- Checked in the browser on a fresh server (port 8502; the 8501 server started at 23:24 was
+  left alone): Person B, "How was my sleep this week?" ($0.0017) showed "Average sleep 9 h
+  14 min", "Highest, Wed 4 May", the "Hours asleep per day" chart with horizontal labels, and
+  an answer naming "Wednesday 2016-05-04" and "Tuesday 2016-05-10", both correct. The chart with
+  gaps was checked by rendering it from the tool result, with no API call.
+- How to check it: `.venv/bin/python -m pytest && .venv/bin/streamlit run streamlit_app.py`, then open http://localhost:8501
+- Open issues: the question-to-metric keywords are a short hand-written list; a question in
+  other words (for example "rest" or "bedtime") falls back to the last call. The 8501 server
+  may need a restart to load the changed package modules.
