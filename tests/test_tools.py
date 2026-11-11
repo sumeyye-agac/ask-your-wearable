@@ -1,8 +1,18 @@
+import math
+import statistics
+
 import pandas as pd
 import pytest
 
 from wearable.schema import to_daily_frame
-from wearable.tools import compare_periods, missing_data_report, weekly_summary
+from wearable.tools import (compare_periods, correlation, correlation_ci, missing_data_report,
+                            most_active_day, weekly_summary)
+
+
+def _frame(**columns) -> pd.DataFrame:
+    n = len(next(iter(columns.values())))
+    dates = pd.date_range("2024-01-01", periods=n, freq="D")
+    return to_daily_frame(pd.DataFrame({"date": dates, **columns}))
 
 
 # --- weekly_summary -----------------------------------------------------------
@@ -138,3 +148,128 @@ def test_missing_dates_are_capped():
 def test_tools_are_deterministic(two_weeks):
     assert weekly_summary(two_weeks, "steps") == weekly_summary(two_weeks, "steps")
     assert missing_data_report(two_weeks) == missing_data_report(two_weeks)
+
+
+# --- most_active_day ----------------------------------------------------------
+
+def test_most_active_day_full_range(two_weeks):
+    out = most_active_day(two_weeks)
+    assert (out["start"], out["end"], out["days"]) == ("2024-01-01", "2024-01-14", 14)
+    assert out["days_with_data"] == 10
+    assert out["most_active"] == {"date": "2024-01-14", "weekday": "Sunday", "steps": 14000}
+    assert [d["steps"] for d in out["top_days"]] == [14000, 13000, 9000]
+    # 1+2+4+5+6+7+8+9+13+14 thousand over 10 days.
+    assert out["mean_steps"] == 6900.0
+
+
+def test_most_active_day_window_and_top_n(two_weeks):
+    out = most_active_day(two_weeks, start_date="2024-01-01", end_date="2024-01-07", top_n=1)
+    assert out["most_active"] == {"date": "2024-01-07", "weekday": "Sunday", "steps": 7000}
+    assert len(out["top_days"]) == 1
+
+
+def test_most_active_day_without_steps(two_weeks):
+    out = most_active_day(two_weeks, start_date="2024-01-10", end_date="2024-01-12")
+    assert out["days_with_data"] == 0
+    assert out["most_active"] is None and out["top_days"] == [] and out["note"]
+
+
+def test_most_active_day_tie_picks_first_date():
+    out = most_active_day(_frame(steps=[5000, 7000, 7000]))
+    assert out["most_active"]["date"] == "2024-01-02"
+    assert [d["date"] for d in out["top_days"]] == ["2024-01-02", "2024-01-03", "2024-01-01"]
+
+
+@pytest.mark.parametrize("top_n", [0, 11, 2.5, True])
+def test_most_active_day_rejects_bad_top_n(two_weeks, top_n):
+    with pytest.raises(ValueError, match="top_n"):
+        most_active_day(two_weeks, top_n=top_n)
+
+
+# --- correlation --------------------------------------------------------------
+
+def test_correlation_ci_textbook_value():
+    # r = 0.5, n = 28: z = 0.549, se = 0.2, so 95% CI in z is 0.157..0.941 -> r 0.156..0.735.
+    low, high = correlation_ci(0.5, 28, "pearson")
+    assert low == pytest.approx(0.156, abs=1e-3)
+    assert high == pytest.approx(0.735, abs=1e-3)
+
+
+def test_spearman_ci_is_wider_by_bonett_wright_factor():
+    r, n = 0.5, 28
+    p_low, p_high = correlation_ci(r, n, "pearson")
+    s_low, s_high = correlation_ci(r, n, "spearman")
+    factor = math.sqrt(1 + r * r / 2)
+    assert math.atanh(s_high) - math.atanh(r) == pytest.approx(
+        factor * (math.atanh(p_high) - math.atanh(r)))
+    assert s_low < p_low
+
+
+def test_pearson_matches_statistics_module():
+    x = list(range(1, 13))
+    y = [2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11]
+    out = correlation(_frame(steps=x, mean_hr=y), "steps", "mean_hr", method="pearson")
+    assert out["n"] == 12 and out["enough_data"] is True
+    assert out["r"] == round(statistics.correlation(x, y), 3)
+    low, high = out["ci_95"]
+    assert low < out["r"] < high and out["ci_excludes_zero"] is True
+
+
+def test_spearman_is_one_for_monotonic_nonlinear():
+    x = list(range(1, 13))
+    y = [v ** 3 for v in x]
+    df = _frame(steps=x, mean_hr=y)
+    spearman = correlation(df, "steps", "mean_hr")
+    assert spearman["method"] == "spearman"
+    assert spearman["r"] == 1.0 and spearman["ci_95"] == [1.0, 1.0]
+    assert correlation(df, "steps", "mean_hr", method="pearson")["r"] < 1.0
+
+
+def test_lag_pairs_x_with_the_next_day():
+    x = [3, 9, 1, 7, 2, 8, 5, 6, 4, 10, 0, 11, 2]
+    # mean_hr on day d+1 equals steps on day d.
+    y = [50.0] + [60 + v for v in x[:-1]]
+    df = _frame(steps=x, mean_hr=y)
+    lagged = correlation(df, "steps", "mean_hr", lag_days=1, method="pearson")
+    assert lagged["n"] == 12 and lagged["r"] == 1.0
+    assert lagged["pairing"] == "steps on day d with mean_hr on day d+1"
+    assert abs(correlation(df, "steps", "mean_hr", method="pearson")["r"]) < 0.5
+
+
+def test_correlation_counts_only_days_with_both_values(two_weeks):
+    # Sleep exists only in week 2, where steps are present on 4 days.
+    out = correlation(two_weeks, "minutes_asleep", "steps")
+    assert out["n"] == 4 and out["enough_data"] is False
+    assert out["r"] is None and out["ci_95"] is None and "at least 10" in out["note"]
+
+
+def test_correlation_with_constant_metric():
+    out = correlation(_frame(steps=list(range(15)), minutes_asleep=[420] * 15),
+                      "minutes_asleep", "steps")
+    assert out["n"] == 15 and out["r"] is None and "same value" in out["note"]
+
+
+def test_correlation_date_range_limits_pairs():
+    x = list(range(20))
+    out = correlation(_frame(steps=x, mean_hr=x), "steps", "mean_hr", lag_days=1,
+                      start_date="2024-01-01", end_date="2024-01-12")
+    # x days 1..12, y taken from days 2..13.
+    assert out["n"] == 12 and out["r"] == 1.0
+
+
+@pytest.mark.parametrize("kwargs, message", [
+    ({"metric_x": "steps", "metric_y": "steps"}, "itself"),
+    ({"metric_x": "steps", "metric_y": "hrv"}, "Valid metrics"),
+    ({"metric_x": "steps", "metric_y": "mean_hr", "lag_days": 8}, "lag_days"),
+    ({"metric_x": "steps", "metric_y": "mean_hr", "lag_days": -1}, "lag_days"),
+    ({"metric_x": "steps", "metric_y": "mean_hr", "method": "kendall"}, "Valid methods"),
+])
+def test_correlation_argument_errors(two_weeks, kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        correlation(two_weeks, **kwargs)
+
+
+def test_new_tools_are_deterministic(two_weeks):
+    assert most_active_day(two_weeks) == most_active_day(two_weeks)
+    assert correlation(two_weeks, "steps", "minutes_in_bed") == \
+        correlation(two_weeks, "steps", "minutes_in_bed")

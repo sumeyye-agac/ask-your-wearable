@@ -6,7 +6,8 @@ import pandas as pd
 import pytest
 
 from wearable.schema import to_daily_frame
-from wearable.tools import compare_periods, missing_data_report, weekly_summary
+from wearable.tools import (compare_periods, correlation, missing_data_report,
+                            most_active_day, weekly_summary)
 
 DEMO = Path(__file__).resolve().parents[1] / "data/demo/demo_daily.csv"
 USERS = [6962181067, 5553957443, 5577150313]
@@ -32,3 +33,9 @@ def test_demo_user_runs_all_tools(demo, user):
     report = missing_data_report(df)
     assert report["metrics"]["steps"]["coverage_percent"] > 85
     assert report["metrics"]["mean_hr"]["days_with_data"] >= 30
+    active = most_active_day(df)
+    assert active["most_active"]["steps"] == max(d["steps"] for d in active["top_days"])
+    sleep_steps = correlation(df, "minutes_asleep", "steps")
+    assert sleep_steps["enough_data"] is True and sleep_steps["n"] >= 10
+    low, high = sleep_steps["ci_95"]
+    assert -1 <= low <= sleep_steps["r"] <= high <= 1

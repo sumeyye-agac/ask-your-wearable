@@ -9,8 +9,10 @@ a message that says what was wrong and what is valid.
 from __future__ import annotations
 
 import math
+from statistics import NormalDist
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from wearable.schema import METRICS, check_metric
@@ -18,6 +20,10 @@ from wearable.schema import METRICS, check_metric
 MIN_DAYS_PER_PERIOD = 3     # compare_periods refuses to compare periods with fewer days
 MAX_LISTED_DATES = 60       # cap on date lists returned to the model
 PRESETS = ("first_half_vs_second_half", "last_4_weeks_vs_previous_4_weeks")
+MIN_PAIRS = 10              # correlation reports no coefficient below this many paired days
+MAX_LAG_DAYS = 7
+MAX_TOP_N = 10
+CORRELATION_METHODS = ("spearman", "pearson")
 
 
 # --- helpers ----------------------------------------------------------------
@@ -219,3 +225,134 @@ def missing_data_report(df: pd.DataFrame, start_date: str | None = None,
             "missing": _dates(window.index[missing]),
         }
     return {"start": _day(start), "end": _day(end), "days": n, "metrics": metrics}
+
+
+def most_active_day(df: pd.DataFrame, start_date: str | None = None,
+                    end_date: str | None = None, top_n: int = 3) -> dict[str, Any]:
+    """Find the day with the most steps, and the next most active days, in a date range.
+
+    Activity here means steps per day; the data has no other activity measure.
+
+    Args:
+        start_date, end_date: YYYY-MM-DD, inclusive. Default to the first and last date
+            on which any metric has data. For "this week", pass the 7 days ending on the
+            last date with data.
+        top_n: how many of the most active days to list, 1 to 10. Default 3.
+
+    Returns the window, days with step data, the most active day (date, weekday, steps),
+    the top_n days in descending order of steps, and the mean steps/day in the window.
+    Ties go to the earlier date. Days without step data are never counted as inactive.
+    """
+    if isinstance(top_n, bool) or not isinstance(top_n, int) or not 1 <= top_n <= MAX_TOP_N:
+        raise ValueError(f"top_n={top_n!r} is not valid; use a whole number from 1 to {MAX_TOP_N}.")
+    first, last = data_range(df)
+    start = _parse_date(start_date, "start_date") if start_date else first
+    end = _parse_date(end_date, "end_date") if end_date else last
+    steps = _window(df, start, end)["steps"].dropna()
+    # A stable sort on descending steps keeps the earlier date first on ties.
+    ranked = steps.sort_values(ascending=False, kind="stable")
+    top = [{"date": _day(d), "weekday": d.day_name(), "steps": int(v)}
+           for d, v in ranked.iloc[:top_n].items()]
+    return {
+        "metric": "steps", "unit": "steps",
+        "start": _day(start), "end": _day(end),
+        "days": (end - start).days + 1,
+        "days_with_data": int(steps.size),
+        "most_active": top[0] if top else None,
+        "top_days": top,
+        "mean_steps": _num(steps.mean()) if steps.size else None,
+        "note": None if steps.size else "No step data in this window.",
+    }
+
+
+def _ranks(values: np.ndarray) -> np.ndarray:
+    """Ranks starting at 1, with ties given their average rank."""
+    return pd.Series(values).rank(method="average").to_numpy()
+
+
+def correlation_ci(r: float, n: int, method: str, level: float = 0.95) -> tuple[float, float]:
+    """Confidence interval for a correlation coefficient via Fisher's z transform.
+
+    Pearson uses the standard error 1/sqrt(n-3). Spearman uses the Bonett & Wright (2000,
+    Psychometrika 65:23-28) standard error sqrt((1 + r^2/2) / (n-3)). Both are normal
+    approximations; they assume independent pairs, which consecutive days are not quite.
+    """
+    if n <= 3:
+        raise ValueError("A confidence interval needs more than 3 pairs.")
+    if abs(r) >= 1.0:
+        return float(r), float(r)
+    variance = (1 + r * r / 2) if method == "spearman" else 1.0
+    se = math.sqrt(variance / (n - 3))
+    zq = NormalDist().inv_cdf(0.5 + level / 2)
+    z = math.atanh(r)
+    return math.tanh(z - zq * se), math.tanh(z + zq * se)
+
+
+def correlation(df: pd.DataFrame, metric_x: str, metric_y: str, lag_days: int = 0,
+                method: str = "spearman", start_date: str | None = None,
+                end_date: str | None = None) -> dict[str, Any]:
+    """Correlate two daily metrics, pairing metric_x on day d with metric_y on day d+lag_days.
+
+    Sleep metrics are dated by the wake-up day, so with lag_days=0 a night's sleep is
+    already paired with the day that follows it ("do I walk less after short sleep?" is
+    metric_x="minutes_asleep", metric_y="steps", lag_days=0).
+
+    Args:
+        metric_x, metric_y: "steps", "minutes_asleep", "minutes_in_bed" or "mean_hr".
+        lag_days: 0 to 7. metric_y is taken this many days after metric_x.
+        method: "spearman" (default; rank-based, robust to unusual days) or "pearson"
+            (linear).
+        start_date, end_date: YYYY-MM-DD, inclusive range for the metric_x day. Default to
+            the user's whole data range.
+
+    Returns n (days where both values exist), the coefficient r from -1 to 1 (positive
+    means the two rise together), its 95% confidence interval, and whether that interval
+    excludes 0. With fewer than 10 pairs, or if a metric does not vary, r and the interval
+    are None and note says why. A correlation says nothing about cause.
+    """
+    check_metric(metric_x)
+    check_metric(metric_y)
+    if method not in CORRELATION_METHODS:
+        raise ValueError(f"Unknown method {method!r}. Valid methods: "
+                         f"{', '.join(CORRELATION_METHODS)}.")
+    if isinstance(lag_days, bool) or not isinstance(lag_days, int) \
+            or not 0 <= lag_days <= MAX_LAG_DAYS:
+        raise ValueError(f"lag_days={lag_days!r} is not valid; use a whole number "
+                         f"from 0 to {MAX_LAG_DAYS}.")
+    if metric_x == metric_y and lag_days == 0:
+        raise ValueError("A metric correlated with itself on the same day is always 1; "
+                         "pick two different metrics or a lag of at least 1 day.")
+
+    first, last = data_range(df)
+    start = _parse_date(start_date, "start_date") if start_date else first
+    end = _parse_date(end_date, "end_date") if end_date else last
+    _window(df, start, end)  # validates the range
+    # The daily frame has one row per calendar day, so a row shift is a day shift.
+    y_later = df[metric_y].shift(-lag_days)
+    in_range = (df.index >= start) & (df.index <= end)
+    pairs = pd.DataFrame({"x": df[metric_x], "y": y_later})[in_range].dropna()
+    n = len(pairs)
+
+    out: dict[str, Any] = {
+        "metric_x": metric_x, "metric_y": metric_y, "lag_days": lag_days,
+        "pairing": f"{metric_x} on day d with {metric_y} on day d+{lag_days}",
+        "method": method, "start": _day(start), "end": _day(end),
+        "n": n, "r": None, "ci_95": None, "ci_excludes_zero": None,
+        "enough_data": False, "note": None,
+    }
+    if n < MIN_PAIRS:
+        out["note"] = f"Only {n} days have both values; at least {MIN_PAIRS} are needed."
+        return out
+    x, y = pairs["x"].to_numpy(), pairs["y"].to_numpy()
+    if method == "spearman":
+        x, y = _ranks(x), _ranks(y)
+    if np.std(x) == 0 or np.std(y) == 0:
+        out["note"] = "One of the metrics has the same value on every paired day."
+        return out
+    r = float(np.corrcoef(x, y)[0, 1])
+    low, high = correlation_ci(r, n, method)
+    out.update({
+        "r": round(r, 3), "ci_95": [round(low, 3), round(high, 3)],
+        "ci_excludes_zero": bool(low > 0 or high < 0), "enough_data": True,
+    })
+    return out
