@@ -70,3 +70,27 @@ One entry per working session. Newest at the bottom. Format is in `CLAUDE.md`.
   independent days, so they are likely too narrow. Deliberately not corrected for.
 - How to check it: read the last bullet of "Limits" in `README.md`.
 - Open issues: none new. Next is day 4: the tool-use loop in the terminal.
+
+### 2026-11-11
+- Day 4: the tool-use loop. `wearable/registry.py` holds the five tool specs the model sees
+  (strict schemas, enums for metrics, presets, methods, lag and top_n) and `run_tool`;
+  `wearable/agent.py` is a hand-written loop around `messages.create` with a step cap
+  (6 model requests), a spend guard ($0.01 per question, estimated from the usage block) and a
+  trace of every tool call; `scripts/ask.py` is the terminal entry point and appends traces to
+  git-ignored `logs/trace.jsonl`. 72 tests passing (20 new, all offline with a scripted client).
+- Verified against current docs before use: Haiku 5.5 prices ($0.10 / $0.50 per MTok up to
+  100K prompt tokens), strict tool use allows optional properties, `anthropic` 2.8.0 installed.
+- Ran 7 real questions on demo users 6962181067 and 5553957443 with `claude-haiku-5-5`. Each
+  took 2 model requests and cost about $0.001 (7,700-8,600 input tokens, 320-770 output).
+  Tool choice was right on all 7; the diagnosis question got an explicit refusal and the deep
+  sleep question was answered with "not in the data".
+- One wrong number in the first run: for "most active day" the model wrote "about 6,900 more
+  than the next-highest day", which is the gap to the weekly mean, not to the second day
+  (3,106). The prompt now forbids deriving any number from tool results; the rerun did not
+  repeat it. One rerun is not evidence that it is fixed; day 7's unsupported-claim rate is.
+- How to check it: `.venv/bin/python -m pytest && .venv/bin/python scripts/ask.py --user 6962181067 "How was my sleep this week?"`
+- Open issues: `most_active_day` reports that a day has no step data but not which one, so the
+  model cannot name it. `get_guideline` (decision 4) is not built and not on any day of the
+  plan. No memory between questions. The spend guard is an estimate inside the program; the
+  Console spend limit is still the real one. Nothing from this session is committed yet.
+  Next is day 5: the Streamlit UI.
