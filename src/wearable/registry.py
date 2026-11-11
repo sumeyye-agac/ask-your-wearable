@@ -12,6 +12,7 @@ tools as ValueError and are meant to be shown to the model.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Callable
 
 import pandas as pd
@@ -199,4 +200,35 @@ def run_tool(df: pd.DataFrame, name: str, arguments: dict[str, Any]) -> dict[str
     if unknown:
         raise ValueError(f"Unknown argument(s) for {name}: {', '.join(sorted(unknown))}. "
                          f"Valid arguments: {', '.join(sorted(_ARGUMENTS[name]))}.")
-    return TOOL_FUNCTIONS[name](df, **arguments)
+    return with_weekdays(TOOL_FUNCTIONS[name](df, **arguments))
+
+
+_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _is_date(value: Any) -> bool:
+    return isinstance(value, str) and _ISO_DATE.fullmatch(value) is not None
+
+
+def _weekday(value: str) -> str:
+    return pd.Timestamp(value).day_name()
+
+
+def with_weekdays(result: Any) -> Any:
+    """Put the weekday next to every date in a tool result, so the model never has to work
+    one out. A "date" gets "weekday", any other date key k gets "k_weekday", and a list of
+    dates under k gets "k_weekdays" in the same order. Existing keys are kept as they are.
+    """
+    if isinstance(result, list):
+        return [with_weekdays(item) for item in result]
+    if not isinstance(result, dict):
+        return result
+    out: dict[str, Any] = {}
+    for key, value in result.items():
+        out[key] = with_weekdays(value)
+        if _is_date(value):
+            name = "weekday" if key == "date" else f"{key}_weekday"
+            out.setdefault(name, _weekday(value))
+        elif isinstance(value, list) and value and all(_is_date(v) for v in value):
+            out.setdefault(f"{key}_weekdays", [_weekday(v) for v in value])
+    return out

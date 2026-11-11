@@ -140,6 +140,9 @@ get_guideline returned it in this conversation. If the question does not ask abo
 leave it out rather than citing it from memory.
 - Call the tools you need, several in a row when a question needs it, then answer. If a \
 tool returns an error, read it, fix the call and try again.
+- Every date in a tool result comes with its weekday ("weekday", "<key>_weekday" or, for a \
+list of dates, "<key>_weekdays"). When you name a weekday, copy it from that field. Never work \
+out a weekday yourself, and do not name one for a date that has none in a tool result.
 - Say how much data a result rests on (days with data, or n), and name the dates of the \
 window you used. When days are missing, say so, because a mean over 2 nights is not a \
 picture of a week.
