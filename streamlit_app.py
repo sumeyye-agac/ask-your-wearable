@@ -183,10 +183,11 @@ def show_result(result: AgentResult, df: pd.DataFrame, user_id: str, name: str) 
 
 
 def use_example() -> None:
-    # Queue the clicked example for this run only and clear the pill, so the same example
-    # can be clicked again. The text box is left alone, so an example never mixes with
-    # what the visitor types next.
-    st.session_state.pending = st.session_state.get("example")
+    # Put the clicked example into the box, replacing whatever was there, and clear the
+    # pill so the same example can be picked again. Nothing is sent until Ask is pressed.
+    picked = st.session_state.get("example")
+    if picked:
+        st.session_state.question = picked
     st.session_state.example = None
 
 
@@ -227,7 +228,7 @@ def ask_tab(user_id: str, name: str, df: pd.DataFrame) -> None:
                       placeholder="For example: How did my steps change over the two months?")
         st.form_submit_button("Ask", on_click=use_typed)
 
-    # Exactly one question per action: the example clicked, or what was typed and submitted.
+    # Exactly one question per Ask: the box's text at that moment, then the box is emptied.
     question = (st.session_state.pop("pending", None) or "").strip()
     if question:
         answer(question, user_id, df)

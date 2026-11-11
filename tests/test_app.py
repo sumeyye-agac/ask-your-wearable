@@ -28,9 +28,17 @@ def fresh_app(monkeypatch, tmp_path):
     st.cache_resource.clear()
 
 
-def run_example(at: AppTest, index: int = 0) -> AppTest:
+def pick_example(at: AppTest, index: int = 0) -> AppTest:
+    """Click an example pill: it fills the question box and sends nothing."""
     pills = at.button_group(key="example")
     pills.set_value(pills.options[index]).run()
+    return at
+
+
+def run_example(at: AppTest, index: int = 0) -> AppTest:
+    """Click an example pill, then press Ask."""
+    pick_example(at, index)
+    at.button[-1].click().run()     # the form's Ask button is the last button on the page
     return at
 
 
@@ -231,15 +239,51 @@ def test_question_limit_per_visitor(monkeypatch):
 
 # --- one question per action (state leak found in browser testing) -------------
 
+def test_example_fills_the_box_and_sends_nothing_until_ask(monkeypatch):
+    asked = stub_ask(monkeypatch, simple_result())
+    at = pick_example(AppTest.from_file(APP).run(), 0)
+    assert at.text_input(key="question").value == "How was my sleep this week?"
+    assert asked == [] and not any(m.value.startswith("**Question:**") for m in at.markdown)
+    at.button[-1].click().run()
+    assert asked == ["How was my sleep this week?"]
+    assert at.text_input(key="question").value == ""
+
+
 def test_example_then_typed_question_sends_only_the_typed_one(monkeypatch):
+    # The original leak: an example stayed in the box and the next question was added to it.
     asked = stub_ask(monkeypatch, simple_result())
     at = run_example(AppTest.from_file(APP).run(), 0)
     assert asked == ["How was my sleep this week?"]
-    # The example never lands in the box, so typing cannot extend it.
-    assert at.text_input(key="question").value == ""
+    assert at.text_input(key="question").value == ""   # emptied after Ask
     type_and_submit(at, "Which day was I most active?")
     assert asked == ["How was my sleep this week?", "Which day was I most active?"]
     assert shown_question(at) == "**Question:** Which day was I most active?"
+
+
+def test_second_example_replaces_the_first_in_the_box(monkeypatch):
+    asked = stub_ask(monkeypatch, simple_result())
+    at = pick_example(AppTest.from_file(APP).run(), 0)
+    pick_example(at, 3)
+    assert at.text_input(key="question").value == "Am I active enough?"
+    at.button[-1].click().run()
+    assert asked == ["Am I active enough?"]
+
+
+def test_typed_text_is_replaced_by_a_picked_example(monkeypatch):
+    asked = stub_ask(monkeypatch, simple_result())
+    at = AppTest.from_file(APP).run()
+    at.text_input(key="question").set_value("half-typed, never submitted")
+    pick_example(at, 3)
+    assert at.text_input(key="question").value == "Am I active enough?"
+    at.button[-1].click().run()
+    assert asked == ["Am I active enough?"]
+
+
+def test_edited_example_sends_exactly_the_box_text(monkeypatch):
+    asked = stub_ask(monkeypatch, simple_result())
+    at = pick_example(AppTest.from_file(APP).run(), 0)
+    type_and_submit(at, "How was my sleep last week?")
+    assert asked == ["How was my sleep last week?"]
 
 
 def test_box_is_cleared_after_submit_and_empty_submit_sends_nothing(monkeypatch):
@@ -247,14 +291,6 @@ def test_box_is_cleared_after_submit_and_empty_submit_sends_nothing(monkeypatch)
     at = type_and_submit(AppTest.from_file(APP).run(), "Am I active enough?")
     assert at.text_input(key="question").value == ""
     at.button[-1].click().run()
-    assert asked == ["Am I active enough?"]
-
-
-def test_typed_then_example_sends_only_the_example(monkeypatch):
-    asked = stub_ask(monkeypatch, simple_result())
-    at = AppTest.from_file(APP).run()
-    at.text_input(key="question").set_value("half-typed, never submitted")
-    run_example(at, 3)
     assert asked == ["Am I active enough?"]
 
 
