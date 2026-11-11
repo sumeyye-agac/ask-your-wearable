@@ -4,6 +4,7 @@
 - headline_numbers: one to three figures from the same tool results, shown large.
 - credits: attribution lines that tool results ask to be shown.
 - UsageLimiter: a per-visitor question limit and an app-wide daily spend cap.
+- visitor_key: who a question is counted against (forwarded address, address, or session).
 - api_error_message / STATUS_MESSAGES: friendly text for failures.
 
 Charts are drawn from tool results, or from the user's daily table with the same
@@ -12,6 +13,7 @@ arguments the tool was called with, never from the model's text.
 
 from __future__ import annotations
 
+import ipaddress
 import threading
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -491,6 +493,35 @@ class UsageLimiter:
                 self._counts[visitor] -= 1
 
 
+def _public_address(text: str | None) -> str | None:
+    """text as a normalised IP address if it is a public one, else None."""
+    try:
+        address = ipaddress.ip_address((text or "").strip())
+    except ValueError:
+        return None
+    return str(address) if address.is_global else None
+
+
+def visitor_key(ip: str | None, forwarded_for: str | None, session_id: str) -> str:
+    """Who a question is counted against: "forwarded:<ip>", "ip:<ip>" or "session:<id>".
+
+    ip is the address of the connection that reached the app. Behind a hosting platform's
+    proxy that is the proxy, not the visitor, so the X-Forwarded-For header is looked at
+    first: its last public address is the one the nearest proxy added, and the entries
+    before it can be typed in by the client. Without a public address from either source
+    the browser session is used; a reload starts a new one, so in that case only the
+    app-wide daily budget of UsageLimiter really holds.
+    """
+    for entry in reversed((forwarded_for or "").split(",")):
+        address = _public_address(entry)
+        if address:
+            return f"forwarded:{address}"
+    address = _public_address(ip)
+    if address:
+        return f"ip:{address}"
+    return f"session:{session_id}"
+
+
 # --- failure messages ---------------------------------------------------------
 
 STATUS_MESSAGES = {
@@ -522,7 +553,7 @@ def api_error_message(status_code: int | None, error_type: str | None) -> str:
     return "Something went wrong while answering. Please try again or rephrase the question."
 
 
-__all__ = ["ChartSpec", "chart_for", "credits", "user_label", "UsageLimiter",
+__all__ = ["ChartSpec", "chart_for", "credits", "user_label", "UsageLimiter", "visitor_key",
            "STATUS_MESSAGES", "NOT_CONFIGURED", "api_error_message", "LABELS", "person_names",
            "person_stats", "person_card", "to_altair", "ACCENT",
            "METRIC_ICONS", "chart_heading", "Headline", "headline_numbers"]
