@@ -38,6 +38,24 @@ def _day(ts: pd.Timestamp) -> str:
     return ts.strftime("%Y-%m-%d")
 
 
+def _hm(minutes: float) -> str:
+    """Minutes as text, rounded to the minute: 458.3 -> '7 h 38 min', 13.9 -> '14 min'."""
+    total = int(round(abs(minutes)))
+    sign = "-" if minutes < 0 and total else ""
+    if total < 60:
+        return f"{sign}{total} min"
+    return f"{sign}{total // 60} h {total % 60:02d} min"
+
+
+def _add_text(out: dict[str, Any], unit: str, *keys: str) -> dict[str, Any]:
+    """For metrics in minutes, add '<key>_text' with the value as hours and minutes."""
+    if unit == "minutes":
+        for key in keys:
+            if out.get(key) is not None:
+                out[f"{key}_text"] = _hm(out[key])
+    return out
+
+
 def _parse_date(value: str, name: str) -> pd.Timestamp:
     try:
         return pd.Timestamp(value).normalize()
@@ -81,7 +99,8 @@ def _dates(index: pd.Index) -> dict[str, Any]:
 
 # --- tools ------------------------------------------------------------------
 
-def weekly_summary(df: pd.DataFrame, metric: str, end_date: str | None = None) -> dict[str, Any]:
+def weekly_summary(df: pd.DataFrame, metric: str, end_date: str | None = None,
+                   threshold: float | None = None) -> dict[str, Any]:
     """Summarise one metric over the 7 days ending on end_date (inclusive).
 
     Args:
@@ -89,9 +108,15 @@ def weekly_summary(df: pd.DataFrame, metric: str, end_date: str | None = None) -
             "minutes_in_bed" (minutes/night), "mean_hr" (bpm, mean of the day's readings).
         end_date: last day of the week, YYYY-MM-DD. Defaults to the last date with any data,
             which is what "this week" means for this data.
+        threshold: optional value in the metric's unit (for example 420 for 7 hours of
+            sleep) to compare the week against.
 
     Returns the window, days with and without data, mean, median, the highest and lowest
-    day, every day's value (None when missing), and for steps the weekly total.
+    day with their distance from the mean, the range (highest minus lowest), every day's
+    value (None when missing), and for steps the weekly total. With a threshold it also
+    returns how many days are at or above it and below it, and the mean minus the
+    threshold. For metrics in minutes every value also comes as text in hours and minutes
+    ("<key>_text"), so nothing has to be converted by the reader.
     """
     m = check_metric(metric)
     end = _parse_date(end_date, "end_date") if end_date else data_range(df)[1]
@@ -102,18 +127,35 @@ def weekly_summary(df: pd.DataFrame, metric: str, end_date: str | None = None) -
         "metric": metric, "unit": m.unit, "start": _day(start), "end": _day(end),
         "days_with_data": int(present.size),
         "missing_dates": [_day(d) for d in values.index[values.isna()]],
-        "mean": None, "median": None, "highest": None, "lowest": None,
-        "daily": [{"date": _day(d), "value": _num(v)} for d, v in values.items()],
+        "mean": None, "median": None, "highest": None, "lowest": None, "range": None,
+        "daily": [_add_text({"date": _day(d), "value": _num(v)}, m.unit, "value")
+                  for d, v in values.items()],
     }
     if present.size:
-        out["mean"] = _num(present.mean())
+        mean = present.mean()
+        out["mean"] = _num(mean)
         out["median"] = _num(present.median())
         # idxmax/idxmin return the first date on ties, which keeps the result deterministic.
-        out["highest"] = {"date": _day(present.idxmax()), "value": _num(present.max())}
-        out["lowest"] = {"date": _day(present.idxmin()), "value": _num(present.min())}
+        out["highest"] = _add_text(
+            {"date": _day(present.idxmax()), "value": _num(present.max()),
+             "above_mean": _num(present.max() - mean)}, m.unit, "value", "above_mean")
+        out["lowest"] = _add_text(
+            {"date": _day(present.idxmin()), "value": _num(present.min()),
+             "below_mean": _num(mean - present.min())}, m.unit, "value", "below_mean")
+        out["range"] = _num(present.max() - present.min())
     if metric == "steps":
         out["total"] = int(present.sum()) if present.size else None
-    return out
+    if threshold is not None:
+        if isinstance(threshold, bool) or not isinstance(threshold, (int, float)) \
+                or not math.isfinite(threshold):
+            raise ValueError(f"threshold={threshold!r} is not valid; use a number in {m.unit}.")
+        out["threshold"] = _add_text({
+            "value": _num(threshold),
+            "days_at_or_above": int((present >= threshold).sum()),
+            "days_below": int((present < threshold).sum()),
+            "mean_minus_threshold": _num(present.mean() - threshold) if present.size else None,
+        }, m.unit, "value", "mean_minus_threshold")
+    return _add_text(out, m.unit, "mean", "median", "range")
 
 
 def preset_periods(df: pd.DataFrame, preset: str) -> tuple[tuple[pd.Timestamp, pd.Timestamp],
@@ -151,9 +193,11 @@ def compare_periods(df: pd.DataFrame, metric: str, preset: str | None = None,
             "last_4_weeks_vs_previous_4_weeks" (the 28 days ending on the last date with
             data against the 28 days before). Period A is always the earlier one.
 
-    Returns per-period mean, standard deviation and days with data, and the difference
-    B minus A in the metric's unit and in percent. If either period has fewer than
-    3 days with data, enough_data is False and the difference is None.
+    Returns per-period mean, standard deviation and days with data, the difference
+    B minus A in the metric's unit and in percent, and which period is higher. For metrics
+    in minutes the means and the difference also come as text in hours and minutes.
+    If either period has fewer than 3 days with data, enough_data is False and the
+    difference is None.
     """
     m = check_metric(metric)
     dates = [period_a_start, period_a_end, period_b_start, period_b_end]
@@ -170,21 +214,24 @@ def compare_periods(df: pd.DataFrame, metric: str, preset: str | None = None,
         if a0 <= b1 and b0 <= a1:
             raise ValueError("The two periods overlap; they must not share any day.")
 
-    a = {"start": _day(a0), "end": _day(a1), **_stats(_window(df, a0, a1)[metric])}
-    b = {"start": _day(b0), "end": _day(b1), **_stats(_window(df, b0, b1)[metric])}
+    a = _add_text({"start": _day(a0), "end": _day(a1),
+                   **_stats(_window(df, a0, a1)[metric])}, m.unit, "mean")
+    b = _add_text({"start": _day(b0), "end": _day(b1),
+                   **_stats(_window(df, b0, b1)[metric])}, m.unit, "mean")
     enough = min(a["days_with_data"], b["days_with_data"]) >= MIN_DAYS_PER_PERIOD
-    diff = pct = None
+    diff = pct = higher = None
     if enough:
         diff = _num(b["mean"] - a["mean"])
         pct = _num(100 * (b["mean"] - a["mean"]) / a["mean"]) if a["mean"] else None
-    return {
+        higher = "period_b" if diff > 0 else "period_a" if diff < 0 else "equal"
+    return _add_text({
         "metric": metric, "unit": m.unit, "preset": preset,
         "period_a": a, "period_b": b,
-        "difference_b_minus_a": diff, "percent_change": pct,
+        "difference_b_minus_a": diff, "percent_change": pct, "higher_period": higher,
         "enough_data": enough,
         "note": None if enough else
         f"At least {MIN_DAYS_PER_PERIOD} days with data are needed in each period.",
-    }
+    }, m.unit, "difference_b_minus_a")
 
 
 def missing_data_report(df: pd.DataFrame, start_date: str | None = None,
@@ -239,28 +286,39 @@ def most_active_day(df: pd.DataFrame, start_date: str | None = None,
             last date with data.
         top_n: how many of the most active days to list, 1 to 10. Default 3.
 
-    Returns the window, days with step data, the most active day (date, weekday, steps),
-    the top_n days in descending order of steps, and the mean steps/day in the window.
-    Ties go to the earlier date. Days without step data are never counted as inactive.
+    Returns the window, days with step data, the dates without step data (at most 60
+    listed), the most active day (date, weekday, steps, and how many steps it is above the
+    second most active day and above the window's mean), the top_n days in descending
+    order of steps, each with its distance from the mean, and the mean steps/day in the
+    window. Ties go to the earlier date. Days without step data are never counted as
+    inactive.
     """
     if isinstance(top_n, bool) or not isinstance(top_n, int) or not 1 <= top_n <= MAX_TOP_N:
         raise ValueError(f"top_n={top_n!r} is not valid; use a whole number from 1 to {MAX_TOP_N}.")
     first, last = data_range(df)
     start = _parse_date(start_date, "start_date") if start_date else first
     end = _parse_date(end_date, "end_date") if end_date else last
-    steps = _window(df, start, end)["steps"].dropna()
+    in_window = _window(df, start, end)["steps"]
+    steps = in_window.dropna()
+    mean = steps.mean() if steps.size else None
     # A stable sort on descending steps keeps the earlier date first on ties.
     ranked = steps.sort_values(ascending=False, kind="stable")
-    top = [{"date": _day(d), "weekday": d.day_name(), "steps": int(v)}
+    top = [{"date": _day(d), "weekday": d.day_name(), "steps": int(v),
+            "steps_above_mean": _num(v - mean)}
            for d, v in ranked.iloc[:top_n].items()]
+    most = None
+    if top:
+        second = int(ranked.iloc[0] - ranked.iloc[1]) if steps.size > 1 else None
+        most = {**top[0], "steps_above_second": second}
     return {
         "metric": "steps", "unit": "steps",
         "start": _day(start), "end": _day(end),
         "days": (end - start).days + 1,
         "days_with_data": int(steps.size),
-        "most_active": top[0] if top else None,
+        "missing": _dates(in_window.index[in_window.isna()]),
+        "most_active": most,
         "top_days": top,
-        "mean_steps": _num(steps.mean()) if steps.size else None,
+        "mean_steps": _num(mean),
         "note": None if steps.size else "No step data in this window.",
     }
 
