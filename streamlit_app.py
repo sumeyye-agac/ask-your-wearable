@@ -180,7 +180,7 @@ def show_result(result: AgentResult, df: pd.DataFrame, user_id: str, name: str) 
     answered = result.status == ANSWERED and bool(result.answer)
     if answered:
         # Read from the tool results, never from the model's text.
-        numbers = headline_numbers(result.tool_calls)
+        numbers = headline_numbers(result.tool_calls, result.question)
         for column, number in zip(st.columns(len(numbers)) if numbers else [], numbers):
             column.metric(number.label, number.value)
         # "$" would start LaTeX in Streamlit markdown.
@@ -189,7 +189,7 @@ def show_result(result: AgentResult, df: pd.DataFrame, user_id: str, name: str) 
         st.warning(STATUS_MESSAGES.get(result.status, STATUS_MESSAGES["truncated"]))
 
     if result.status == ANSWERED:
-        spec = chart_for(result.tool_calls, df)
+        spec = chart_for(result.tool_calls, df, result.question)
         if spec is not None:
             show_chart(spec)
     for line in credits(result.tool_calls):

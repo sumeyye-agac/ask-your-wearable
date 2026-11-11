@@ -68,34 +68,44 @@ def _axis(metric: str, values: pd.Series) -> pd.Series:
     return values / 60 if metric in TO_HOURS else values
 
 
+def _days(dates: list[str]) -> list[str]:
+    """Short horizontal axis labels for dates, e.g. "Wed 4 May"."""
+    return [_short_date(d) for d in dates]
+
+
 def _weekly_summary(out: dict[str, Any], _df: pd.DataFrame, _args: dict[str, Any]) -> ChartSpec:
     metric = out["metric"]
-    data = pd.DataFrame({"date": [d["date"] for d in out["daily"]],
+    dates = [d["date"] for d in out["daily"]]
+    data = pd.DataFrame({"day": _days(dates), "date": dates,
                          "value": [d["value"] for d in out["daily"]]})
     data["value"] = _axis(metric, data["value"].astype("float64"))
-    return ChartSpec(f"{LABELS[metric]} per day, {out['start']} to {out['end']}", "bar",
-                     data.rename(columns={"value": LABELS[metric]}), "date", LABELS[metric],
-                     "Date", LABELS[metric], icons=[METRIC_ICONS[metric]])
+    label = LABELS[metric]
+    return ChartSpec(f"{label} per day, {out['start']} to {out['end']}", "bar",
+                     data.rename(columns={"value": label}), "day", label, "Day", label,
+                     tooltip=["date", label], x_angle=0, icons=[METRIC_ICONS[metric]])
 
 
 def _weekly_active_minutes(out: dict[str, Any], _df: pd.DataFrame,
                            _args: dict[str, Any]) -> ChartSpec:
     fairly, very = LABELS["fairly_active_minutes"], LABELS["very_active_minutes"]
+    dates = [d["date"] for d in out["daily"]]
     data = pd.DataFrame({
-        "date": [d["date"] for d in out["daily"]],
+        "day": _days(dates), "date": dates,
         fairly: [d["fairly_active_minutes"] for d in out["daily"]],
         very: [d["very_active_minutes"] for d in out["daily"]],
     })
     return ChartSpec(f"Active minutes per day, {out['start']} to {out['end']}", "bar",
-                     data, "date", [fairly, very], "Date", "Minutes",
+                     data, "day", [fairly, very], "Day", "Minutes", x_angle=0,
                      icons=[METRIC_ICONS["fairly_active_minutes"]])
 
 
 def _most_active_day(out: dict[str, Any], df: pd.DataFrame, _args: dict[str, Any]) -> ChartSpec:
     window = df.loc[out["start"]:out["end"], "steps"]
-    data = pd.DataFrame({"date": window.index.strftime("%Y-%m-%d"), "Steps": window.to_numpy()})
+    dates = list(window.index.strftime("%Y-%m-%d"))
+    data = pd.DataFrame({"day": _days(dates), "date": dates, "Steps": window.to_numpy()})
     return ChartSpec(f"Steps per day, {out['start']} to {out['end']}", "bar", data,
-                     "date", "Steps", "Date", "Steps", icons=[METRIC_ICONS["steps"]])
+                     "day", "Steps", "Day", "Steps", tooltip=["date", "Steps"], x_angle=0,
+                     icons=[METRIC_ICONS["steps"]])
 
 
 def _compare_periods(out: dict[str, Any], _df: pd.DataFrame,
@@ -143,19 +153,72 @@ CHARTS: dict[str, Callable[[dict[str, Any], pd.DataFrame, dict[str, Any]], Chart
 }
 
 
-def chart_for(tool_calls: list[Any], df: pd.DataFrame) -> ChartSpec | None:
-    """A chart for the last successful tool call that has one, or None.
+# Words that tie a question to metrics, in English and Turkish, most specific first. For
+# sleep, minutes asleep comes before time in bed unless the question says "in bed".
+_QUESTION_TOPICS: list[tuple[tuple[str, ...], list[str]]] = [
+    (("in bed", "yatakta", "yatak"), ["minutes_in_bed"]),
+    (("sleep", "slept", "asleep", "night", "uyku", "uyu", "gece"),
+     ["minutes_asleep", "minutes_in_bed"]),
+    (("heart", "pulse", "bpm", "kalp", "nabız", "nabiz"), ["mean_hr"]),
+    (("step", "walk", "adım", "adim", "yürü", "yuru"), ["steps"]),
+    (("active", "activity", "exercise", "workout", "moderate", "vigorous", "aktif", "hareket",
+      "egzersiz", "spor"), ["fairly_active_minutes", "very_active_minutes", "steps"]),
+]
+
+
+def question_metrics(question: str | None) -> list[str]:
+    """The metrics a question is about, most relevant first; empty if it names none."""
+    text = (question or "").lower()
+    found: list[str] = []
+    for words, metrics in _QUESTION_TOPICS:
+        if any(word in text for word in words):
+            found += [m for m in metrics if m not in found]
+    return found
+
+
+def _call_metrics(call: Any) -> set[str]:
+    out = call.output
+    if call.name in ("weekly_summary", "compare_periods"):
+        return {out["metric"]}
+    if call.name == "correlation":
+        return {out["metric_x"], out["metric_y"]}
+    if call.name == "most_active_day":
+        return {"steps"}
+    if call.name == "weekly_active_minutes":
+        return {"fairly_active_minutes", "very_active_minutes"}
+    return set()
+
+
+def answer_call(tool_calls: list[Any], question: str | None = None) -> Any | None:
+    """The tool call an answer's headline numbers and chart are taken from, or None.
+
+    Among successful calls that have headline numbers, the one that covers most of the
+    metrics the question is about wins; then the one whose metric comes first for the
+    question (minutes asleep before time in bed for a sleep question); then the later call.
+    A question that names no metric therefore gets the last such call.
+    """
+    wanted = question_metrics(question)
+    best, best_key = None, None
+    for index, call in enumerate(tool_calls):
+        if call.is_error or call.name not in HEADLINES or not HEADLINES[call.name](call.output):
+            continue
+        matched = [wanted.index(m) for m in _call_metrics(call) if m in wanted]
+        key = (len(matched), -min(matched, default=len(wanted)), index)
+        if best_key is None or key > best_key:
+            best, best_key = call, key
+    return best
+
+
+def chart_for(tool_calls: list[Any], df: pd.DataFrame,
+              question: str | None = None) -> ChartSpec | None:
+    """The chart for the call answer_call picks, or None if that call has no chart.
 
     tool_calls are agent.ToolCall objects (anything with name, input, output, is_error).
-    The last call is used because the model usually ends on the result it answers from.
     """
-    for call in reversed(tool_calls):
-        if call.is_error or call.name not in CHARTS:
-            continue
-        spec = CHARTS[call.name](call.output, df, call.input)
-        if spec is not None:
-            return spec
-    return None
+    call = answer_call(tool_calls, question)
+    if call is None or call.name not in CHARTS:
+        return None
+    return CHARTS[call.name](call.output, df, call.input)
 
 
 def chart_heading(spec: ChartSpec) -> str:
@@ -193,8 +256,13 @@ def _chart(spec: ChartSpec, accent: str) -> alt.Chart:
             y=alt.Y(field=spec.y, type="quantitative", title=spec.y_label,
                     scale=alt.Scale(zero=False)),
             tooltip=tips)
+    # Horizontal labels; on long ranges the ones that would overlap are left out. The
+    # domain lists every row, so a day without data keeps its empty slot instead of being
+    # dropped (Vega-Lite drops rows whose value is missing).
     x = alt.X(field=spec.x, type="nominal", title=spec.x_label, sort=None,
-              axis=alt.Axis(labelAngle=spec.x_angle))
+              scale=alt.Scale(domain=[str(v) for v in data[spec.x]]),
+              axis=alt.Axis(labelAngle=spec.x_angle, labelOverlap="greedy",
+                            labelSeparation=6))
     if isinstance(spec.y, list):  # stacked bars, one colour step per series
         colors = [accent, _tint(accent, 0.55)][:len(spec.y)]
         return alt.Chart(data).transform_fold(spec.y, as_=["series", "value"]).mark_bar().encode(
@@ -358,20 +426,14 @@ HEADLINES: dict[str, Callable[[dict[str, Any]], list[Headline]]] = {
 }
 
 
-def headline_numbers(tool_calls: list[Any]) -> list[Headline]:
+def headline_numbers(tool_calls: list[Any], question: str | None = None) -> list[Headline]:
     """One to three headline figures for an answer, or none.
 
-    They are read from the result of the last successful tool call that has any (the
-    same call chart_for draws), and only formatted here: nothing is computed, and nothing
-    is taken from the model's text.
+    They are read from the call answer_call picks (the same call chart_for draws), and
+    only formatted here: nothing is computed, and nothing is taken from the model's text.
     """
-    for call in reversed(tool_calls):
-        if call.is_error or call.name not in HEADLINES:
-            continue
-        shown = HEADLINES[call.name](call.output)
-        if shown:
-            return shown
-    return []
+    call = answer_call(tool_calls, question)
+    return HEADLINES[call.name](call.output) if call is not None else []
 
 
 # --- limits -------------------------------------------------------------------
