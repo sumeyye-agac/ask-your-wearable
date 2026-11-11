@@ -63,13 +63,51 @@ def shown_question(at: AppTest) -> str:
     return next(m.value for m in at.markdown if m.value.startswith("**Question:**"))
 
 
-def test_page_renders_with_users_examples_and_notes():
+def test_page_renders_with_tabs_people_examples_and_notes():
     at = AppTest.from_file(APP).run()
     assert not at.exception
-    assert len(at.selectbox[0].options) == 3
+    assert [t.label for t in at.tabs][:3] == ["Ask", "How it works", "Data"]
+    assert at.sidebar.selectbox[0].options == ["Person A", "Person B", "Person C"]
+    assert "59 days of steps, 58 nights of sleep" in at.sidebar.caption[0].value
     assert len([b for b in at.button if b.key and b.key.startswith("example_")]) == 5
     assert "not medical advice" in at.info[0].value
-    assert any("zenodo.53894" in c.value and "CC BY 4.0" in c.value for c in at.caption)
+    footer = " ".join(c.value for c in at.caption)
+    assert "Built by Sümeyye Ağaç" in footer and "github.com/sumeyye-agac" in footer
+    assert "linkedin.com/in/sumeyyeagac" in footer
+    assert "zenodo.53894" in footer and "CC BY 4.0" in footer
+
+
+def test_no_anthropic_or_claude_branding_on_the_page():
+    at = AppTest.from_file(APP).run()
+    visible = " ".join(e.value for kind in ("markdown", "caption", "title", "subheader", "info")
+                       for e in getattr(at, kind)).lower()
+    assert "anthropic" not in visible
+    # The model id is named where the pipeline is explained, never as branding.
+    assert visible.count("claude") == visible.count("claude-haiku-5-5") + \
+        visible.count("claude haiku 5.5") + visible.count("claude api")
+
+
+def test_how_it_works_tab_shows_recorded_checks():
+    at = AppTest.from_file(APP).run()
+    text = " ".join(m.value for m in at.markdown)
+    assert "332 of 346" in text and "99.9%" in text and "903" in text
+    assert "\\$0.01" in text            # prices are escaped, not LaTeX
+    assert [h.value for h in at.subheader][:6] == [
+        "1. Raw Fitbit export", "2. Cleaning and the daily table", "3. Tested tools",
+        "4. Agent", "5. This app", "Limits"]
+
+
+def test_data_tab_shows_the_selected_persons_tables():
+    at = AppTest.from_file(APP).run()
+    at.sidebar.selectbox[0].set_value("5577150313").run()
+    assert "Daily table: Person B" in [h.value for h in at.subheader]
+    # Dataframes in page order: the daily table, then the four raw tables.
+    daily = at.dataframe[0].value
+    assert len(daily) == 61 and list(daily.columns)[0] == "date"
+    raw = [d.value for d in at.dataframe[1:]]
+    assert len(raw) == 4 and all(set(r["Id"]) == {"5577150313"} for r in raw)
+    assert list(raw[3].columns) == ["Id", "Time", "Value"]      # heart rate, as exported
+    assert len(at.get("download_button")) == 1
 
 
 def test_missing_api_key_gives_a_message_not_a_crash():
@@ -97,6 +135,8 @@ def test_answer_chart_trace_and_cdc_credit(monkeypatch):
     assert any(c.value == guideline["credit"] for c in at.caption)
     assert any("Hours asleep per day" in c.value for c in at.caption)
     assert at.expander[0].label == "How this answer was computed"
+    # The page says "Person A"; the trace keeps the real id.
+    assert any("Person A, Zenodo user id `5553957443`" in m.value for m in at.markdown)
     assert len(at.json) == 2
     assert "Questions left today: 9 of 10" in " ".join(c.value for c in at.caption)
 

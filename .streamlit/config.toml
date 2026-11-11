@@ -1,0 +1,10 @@
+[theme]
+base = "light"
+primaryColor = "#2A7F7A"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F1F6F5"
+textColor = "#1E2A2C"
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap, sans-serif"
+
+[browser]
+gatherUsageStats = false
