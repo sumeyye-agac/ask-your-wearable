@@ -21,19 +21,22 @@ import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
-from wearable.agent import ANSWERED, DEFAULT_MODEL, AgentResult, append_trace, ask
-from wearable.app_text import (ABOUT_DATA, AUTHOR, DATASET_CREDIT, INTRO, LIMITS, PIPELINE,
-                               PIPELINE_DOT, RAW_SAMPLE_NOTE, RAW_TABLES)
+from wearable.agent import (ANSWERED, DEFAULT_MODEL, AgentResult, append_trace, ask,
+                            result_from_record)
+from wearable.app_text import (ABOUT_DATA, AUTHOR, DATASET_CREDIT, HEADLINE, LIMITS, PIPELINE,
+                               PIPELINE_DOT, RAW_SAMPLE_NOTE, RAW_TABLES, STEPS, SUBLINE)
 from wearable.presentation import (NOT_CONFIGURED, STATUS_MESSAGES, ChartSpec, UsageLimiter,
                                    ACCENT, METRIC_ICONS, api_error_message, chart_for,
-                                   chart_heading, credits, person_names, person_profile,
-                                   to_altair)
+                                   chart_heading, credits, headline_numbers, person_card,
+                                   person_names, to_altair)
 from wearable.schema import to_daily_frame
 
 REPO = Path(__file__).resolve().parent
 DEMO = REPO / "data/demo/demo_daily.csv"
 RAW_SAMPLE = REPO / "data/demo/raw_sample"
 LOGO = REPO / "assets/logo.svg"
+STYLE = REPO / "assets/style.css"                 # the whole visual system, in one file
+EXAMPLE = REPO / "data/demo/example_answer.json"  # one real run, copied from logs/trace.jsonl
 TRACE = Path(os.environ.get("WEARABLE_TRACE", REPO / "logs/trace.jsonl"))
 
 QUESTIONS_PER_VISITOR = 10    # per UTC day
@@ -56,38 +59,6 @@ EXAMPLE_METRIC = {
     "Is my sleep enough?": "minutes_asleep",
 }
 
-ACCENT_TINT = "#E3F0EE"
-# A faint pulse line drawn behind the right side of the header band.
-_PULSE = ("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 260 60'>"
-          "<polyline points='0,32 70,32 84,32 94,14 108,50 120,22 130,32 170,32 180,26 188,38 "
-          "196,32 260,32' fill='none' stroke='%232A7F7A' stroke-opacity='0.22' stroke-width='3' "
-          "stroke-linecap='round' stroke-linejoin='round'/></svg>")
-STYLE = f"""
-<style>
-.ayw-header {{
-  display: flex; align-items: center; gap: 16px; padding: 22px 26px; border-radius: 16px;
-  background: {ACCENT_TINT} url("{_PULSE}") no-repeat right 22px center / 240px 56px;
-}}
-.ayw-header svg {{ width: 56px; height: 56px; flex: none; }}
-.ayw-header h1 {{ margin: 0; padding: 0; font-size: 2.3rem; font-weight: 700;
-                  letter-spacing: -0.01em; color: #1E2A2C; }}
-/* Selected person: solid accent. !important because Streamlit sets the selected
-   background with a more specific generated class. */
-button[data-variant="segmented_control"][aria-checked="true"] {{
-  background-color: {ACCENT} !important; border-color: {ACCENT} !important;
-}}
-button[data-variant="segmented_control"][aria-checked="true"] p {{ color: #FFFFFF !important; }}
-@media (max-width: 640px) {{
-  .ayw-header {{ background-image: none; padding: 16px 18px; }}
-  .ayw-header h1 {{ font-size: 1.8rem; }}
-  .ayw-header svg {{ width: 44px; height: 44px; }}
-}}
-/* Active tab: accent text and a firm underline. */
-[data-testid="stTab"][aria-selected="true"] {{ box-shadow: inset 0 -3px 0 {ACCENT}; }}
-[data-testid="stTab"][aria-selected="true"] p {{ color: {ACCENT}; font-weight: 600; }}
-</style>
-"""
-
 WELLNESS_NOTE = ("General wellness information about sample data, not medical advice. "
                  "The app cannot diagnose anything; for health questions, ask a clinician.")
 
@@ -103,6 +74,13 @@ def load_users() -> dict[str, pd.DataFrame]:
 def load_raw_sample() -> dict[str, pd.DataFrame]:
     return {name: pd.read_csv(RAW_SAMPLE / f"{name}.csv.gz", dtype={"Id": str})
             for name in RAW_TABLES}
+
+
+@st.cache_data
+def load_example() -> tuple[AgentResult, str]:
+    """The saved run shown before the first question, and the user id it was asked about."""
+    record = json.loads(EXAMPLE.read_text(encoding="utf-8"))
+    return result_from_record(record), record["user_id"]
 
 
 @st.cache_resource
@@ -136,6 +114,7 @@ def visitor_id() -> str:
 def answer(question: str, user_id: str, df: pd.DataFrame) -> None:
     """Run one question and store the outcome in session state for display."""
     st.session_state.outcome = None
+    st.session_state.asked = True   # from here on the example answer stays hidden
     visitor = visitor_id()
     refusal = limiter().start(visitor)
     if refusal:
@@ -191,8 +170,19 @@ def show_chart(spec: ChartSpec) -> None:
     st.altair_chart(to_altair(spec, accent), width="stretch")
 
 
+def label(text: str, kind: str = "") -> None:
+    """A small uppercase section label."""
+    st.markdown(f'<div class="ayw-label {kind}">{text}</div>', unsafe_allow_html=True)
+
+
 def show_result(result: AgentResult, df: pd.DataFrame, user_id: str, name: str) -> None:
-    if result.status == ANSWERED and result.answer:
+    """Headline numbers, the explanation, the chart and the trace, in that order."""
+    answered = result.status == ANSWERED and bool(result.answer)
+    if answered:
+        # Read from the tool results, never from the model's text.
+        numbers = headline_numbers(result.tool_calls)
+        for column, number in zip(st.columns(len(numbers)) if numbers else [], numbers):
+            column.metric(number.label, number.value)
         # "$" would start LaTeX in Streamlit markdown.
         st.markdown(result.answer.replace("$", "\\$"))
     else:
@@ -224,6 +214,30 @@ def show_result(result: AgentResult, df: pd.DataFrame, user_id: str, name: str) 
                    f"about ${result.cost_usd:.4f}.")
 
 
+def show_question(question: str) -> None:
+    with st.container(key="asked_question"):
+        st.markdown(escape_markdown(question))
+
+
+def show_example(users: dict[str, pd.DataFrame], names: dict[str, str]) -> None:
+    """The payoff before the first question: a real saved answer with its chart and trace."""
+    result, user_id = load_example()
+    with st.container(key="card_example"):
+        label(f"Example answer · {names[user_id]} · saved from a real run", "ayw-label-example")
+        show_question(result.question)
+        show_result(result, users[user_id], user_id, names[user_id])
+
+
+def show_outcome(outcome: dict, df: pd.DataFrame, user_id: str, name: str) -> None:
+    with st.container(key="card_answer"):
+        label(f"Your question · {name}")
+        show_question(outcome["question"])
+        if "error" in outcome:
+            st.error(outcome["error"])
+        else:
+            show_result(outcome["result"], df, user_id, name)
+
+
 def use_example() -> None:
     # Put the clicked example into the box, replacing whatever was there, and clear the
     # pill so the same example can be picked again. Nothing is sent until Ask is pressed.
@@ -246,103 +260,144 @@ def no_latex(text: str) -> str:
 
 
 def pick_person(users: dict[str, pd.DataFrame], names: dict[str, str]) -> str:
-    """One compact selection for the whole page; the Data tab reads the same value."""
-    user_id = st.segmented_control("Person", sorted(users), default=sorted(users)[0],
-                                   required=True, format_func=names.get, key="person",
-                                   label_visibility="collapsed")
-    st.caption(person_profile(users[user_id]))
+    """Three selectable cards; the Data tab reads the same value."""
+    label("Whose data to ask about")
+    user_id = st.pills("Person", sorted(users), default=sorted(users)[0], required=True,
+                       format_func=lambda uid: person_card(names[uid], users[uid]),
+                       key="person", label_visibility="collapsed", width="stretch")
     outcome = st.session_state.get("outcome")
     if outcome and outcome.get("user_id") not in (None, user_id):
         st.session_state.outcome = None  # an answer about another person would mislead
     return user_id
 
 
-def ask_tab(user_id: str, name: str, df: pd.DataFrame) -> None:
-    st.write(INTRO)
-    st.caption(WELLNESS_NOTE)
-    st.space("small")
-
-    st.pills("Try an example", EXAMPLES, key="example", on_change=use_example,
-             format_func=lambda q: f":material/{METRIC_ICONS[EXAMPLE_METRIC[q]]}: {q}")
-
+def question_box() -> None:
+    """The focal point: headline, the question bar with Ask inside it, examples, the note."""
+    # A div with a heading role: Streamlit would add an anchor link to a real <h1>.
+    st.markdown(f'<div class="ayw-hero"><div class="ayw-headline" role="heading" '
+                f'aria-level="1">{HEADLINE.replace(". ", ".<br>", 1)}</div>'
+                f'<p>{SUBLINE}</p></div>', unsafe_allow_html=True)
     # The box is emptied after every submit; the question answered is shown above the answer.
     with st.form("ask", border=False):
-        st.text_input("Your question", key="question", max_chars=MAX_QUESTION_CHARS,
-                      placeholder="For example: How did my steps change over the two months?")
-        st.form_submit_button("Ask", on_click=use_typed, type="primary")
+        with st.container(key="askbar", horizontal=True, wrap=False, gap="small",
+                          vertical_alignment="center"):
+            st.text_input("Your question", key="question", max_chars=MAX_QUESTION_CHARS,
+                          label_visibility="collapsed",
+                          placeholder="Ask about sleep, steps, activity or heart rate")
+            st.form_submit_button("Ask", on_click=use_typed, type="primary", key="ask_button",
+                                  icon=":material/arrow_forward:", icon_position="right")
+    st.pills("Try an example", EXAMPLES, key="example", on_change=use_example,
+             label_visibility="collapsed",
+             format_func=lambda q: f":material/{METRIC_ICONS[EXAMPLE_METRIC[q]]}: {q}")
+    st.markdown(f'<p class="ayw-note">{WELLNESS_NOTE}</p>', unsafe_allow_html=True)
 
-    # Exactly one question per Ask: the box's text at that moment, then the box is emptied.
-    question = (st.session_state.pop("pending", None) or "").strip()
-    if question:
-        answer(question, user_id, df)
 
-    outcome = st.session_state.get("outcome")
-    if outcome:
-        st.space("small")
-        st.markdown(f"**Question:** {escape_markdown(outcome['question'])}")
-        if "error" in outcome:
-            st.error(outcome["error"])
-        else:
-            show_result(outcome["result"], df, user_id, name)
+def open_how_it_works() -> None:
+    st.session_state.tab = "How it works"
 
-    st.space("small")
+
+def steps_strip() -> None:
+    """How it works in three steps, with the way to the full explanation."""
+    with st.container(key="card_steps"):
+        label("How it works")
+        items = "".join(
+            f'<div class="ayw-step"><span class="ayw-step-icon" aria-hidden="true" translate="no">'
+            f'{icon}</span><div><strong>{i}. {title}</strong><p>{text}</p></div></div>'
+            for i, (icon, title, text) in enumerate(STEPS, start=1))
+        st.markdown(f'<div class="ayw-steps">{items}</div>', unsafe_allow_html=True)
+        st.button("See the full pipeline, with its checks and limits", key="to_how",
+                  on_click=open_how_it_works, type="tertiary",
+                  icon=":material/arrow_forward:", icon_position="right")
+
+
+def ask_tab(users: dict[str, pd.DataFrame], names: dict[str, str]) -> str:
+    """The Ask tab, drawn top to bottom: question box, person cards, answer area, steps.
+
+    The person picker runs first because the answer needs its value, but it is placed
+    under the question box so the page explains itself before asking for a choice.
+    """
+    box, people, answer_area = st.container(key="hero"), st.container(), st.container()
+    with people:
+        user_id = pick_person(users, names)
+    with box:
+        question_box()
+    name, df = names[user_id], users[user_id]
+
+    with answer_area:
+        # Exactly one question per Ask: the box's text at that moment, then the box is emptied.
+        question = (st.session_state.pop("pending", None) or "").strip()
+        if question:
+            answer(question, user_id, df)
+        outcome = st.session_state.get("outcome")
+        if outcome:
+            show_outcome(outcome, df, user_id, name)
+        elif not st.session_state.get("asked"):
+            show_example(users, names)
+
+    steps_strip()
     left = limiter().remaining(visitor_id())
     st.caption(f"Questions left today: {left} of {QUESTIONS_PER_VISITOR}. Each question is "
                f"answered on its own; the app does not remember earlier questions.")
+    return user_id
 
 
 def how_tab() -> None:
     st.write("From the raw export to an answer, in five steps. The numbers below are the "
              "checks recorded while building the app.")
     st.graphviz_chart(PIPELINE_DOT)
-    for step in PIPELINE:
-        st.subheader(step["title"])
-        st.markdown(no_latex(step["text"]))
-        st.markdown("**Key decisions and checks**\n\n" +
-                    "\n".join(f"- {no_latex(d)}" for d in step["decisions"]))
-    st.subheader("Limits")
-    st.markdown("\n".join(f"- {no_latex(item)}" for item in LIMITS))
+    for i, step in enumerate(PIPELINE, start=1):
+        with st.container(key=f"card_step_{i}"):
+            st.subheader(step["title"])
+            st.markdown(no_latex(step["text"]))
+            st.markdown("**Key decisions and checks**\n\n" +
+                        "\n".join(f"- {no_latex(d)}" for d in step["decisions"]))
+    with st.container(key="card_limits"):
+        st.subheader("Limits")
+        st.markdown("\n".join(f"- {no_latex(item)}" for item in LIMITS))
 
 
 def data_tab(user_id: str, name: str, df: pd.DataFrame) -> None:
-    st.subheader("About the data")
-    st.markdown(ABOUT_DATA)
+    with st.container(key="card_about"):
+        st.subheader("About the data")
+        st.markdown(ABOUT_DATA)
 
-    st.subheader(f"Daily table: {name}")
-    st.caption(f"Zenodo user id {user_id}. One row per day; an empty cell means no valid "
-               f"measurement that day. Click a column header to sort.")
-    table = df.reset_index()
-    table["date"] = table["date"].dt.strftime("%Y-%m-%d")
-    st.dataframe(table, hide_index=True, key="daily_table")
-    st.download_button("Download this table as CSV", table.to_csv(index=False).encode(),
-                       file_name=f"daily_{user_id}.csv", mime="text/csv", key="download_daily")
+    with st.container(key="card_daily"):
+        st.subheader(f"Daily table: {name}")
+        st.caption(f"Zenodo user id {user_id}. One row per day; an empty cell means no valid "
+                   f"measurement that day. Click a column header to sort.")
+        table = df.reset_index()
+        table["date"] = table["date"].dt.strftime("%Y-%m-%d")
+        st.dataframe(table, hide_index=True, key="daily_table")
+        st.download_button("Download this table as CSV", table.to_csv(index=False).encode(),
+                           file_name=f"daily_{user_id}.csv", mime="text/csv",
+                           key="download_daily")
 
-    st.subheader(f"Raw sample: {name}")
-    st.caption(RAW_SAMPLE_NOTE)
-    sample = load_raw_sample()
-    tabs = st.tabs([label for label, _ in RAW_TABLES.values()])
-    for tab, (table_name, (_, line)) in zip(tabs, RAW_TABLES.items()):
-        with tab:
-            rows = sample[table_name][sample[table_name]["Id"] == user_id]
-            st.caption(f"`{table_name}`: {line} {len(rows):,} rows.")
-            st.dataframe(rows, hide_index=True, key=f"raw_{table_name}")
+    with st.container(key="card_raw"):
+        st.subheader(f"Raw sample: {name}")
+        st.caption(RAW_SAMPLE_NOTE)
+        sample = load_raw_sample()
+        tabs = st.tabs([label for label, _ in RAW_TABLES.values()])
+        for tab, (table_name, (_, line)) in zip(tabs, RAW_TABLES.items()):
+            with tab:
+                rows = sample[table_name][sample[table_name]["Id"] == user_id]
+                st.caption(f"`{table_name}`: {line} {len(rows):,} rows.")
+                st.dataframe(rows, hide_index=True, key=f"raw_{table_name}")
 
 
 def main() -> None:
     st.set_page_config(page_title="Ask Your Wearable", page_icon=str(LOGO), layout="centered")
-    st.markdown(STYLE, unsafe_allow_html=True)
-    st.markdown(f'<div class="ayw-header">{LOGO.read_text()}<h1>Ask Your Wearable</h1></div>',
-                unsafe_allow_html=True)
+    st.markdown(f"<style>{STYLE.read_text()}</style>", unsafe_allow_html=True)
+    with st.container(key="brand"):
+        st.markdown(f'<div class="ayw-brand">{LOGO.read_text()}<span>Ask Your Wearable</span>'
+                    f'</div>', unsafe_allow_html=True)
 
     users = load_users()
     names = person_names(list(users))
 
-    ask, how, data = st.tabs(["Ask", "How it works", "Data"])
+    # The tabs keep their state so the "How it works" strip on the Ask tab can open its tab.
+    ask, how, data = st.tabs(["Ask", "How it works", "Data"], key="tab", on_change="rerun")
     with ask:
-        # The picker is drawn first, inside the Ask tab, and its value drives the whole page.
-        user_id = pick_person(users, names)
-        st.space("small")
-        ask_tab(user_id, names[user_id], users[user_id])
+        user_id = ask_tab(users, names)
     with how:
         how_tab()
     with data:

@@ -144,6 +144,14 @@ def test_trace_file_gets_one_json_line_per_question(two_weeks, tmp_path):
     assert record["tool_calls"][0]["name"] == "weekly_summary"
 
 
+def test_a_trace_record_reads_back_as_the_same_result(two_weeks, tmp_path):
+    client = FakeClient(reply(tool_use("weekly_summary", {"metric": "steps"})), final("Done."))
+    result = agent.ask(client, two_weeks, "How many steps?")
+    agent.append_trace(result, tmp_path / "trace.jsonl", "u1")
+    record = json.loads((tmp_path / "trace.jsonl").read_text())
+    assert agent.result_from_record(record) == result
+
+
 def test_prompt_names_the_partial_day_when_the_export_stopped_early(two_weeks):
     partial = two_weeks.copy()
     partial.loc["2024-01-14", "steps"] = float("nan")   # sleep is still there on the 14th

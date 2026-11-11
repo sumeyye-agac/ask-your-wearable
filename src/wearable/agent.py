@@ -240,3 +240,9 @@ def append_trace(result: AgentResult, path: Path, user_id: str) -> None:
               "user_id": user_id, **asdict(result)}
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record) + "\n")
+
+
+def result_from_record(record: dict[str, Any]) -> AgentResult:
+    """The AgentResult behind one record written by append_trace."""
+    fields = {k: v for k, v in record.items() if k not in ("time", "user_id", "tool_calls")}
+    return AgentResult(**fields, tool_calls=[ToolCall(**c) for c in record["tool_calls"]])

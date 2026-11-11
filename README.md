@@ -192,10 +192,15 @@ the decisions and checks recorded here. "Data" describes the dataset and shows t
 person's daily table (sortable, downloadable as CSV) and their raw sample day. People are shown
 as Person A, B and C; the real Zenodo id is in each answer's trace and on the Data tab.
 
-Pick one of the three demo users, type a question or click an example, and the app shows the
-answer, a small chart where one fits (the week's sleep or steps, active minutes, two periods,
-or a scatter for a correlation) and a "How this answer was computed" section listing each tool
-call with its arguments and result. When an answer uses the CDC guideline lookup, CDC's credit
+Type a question or click an example (it fills the box; nothing is sent until Ask), and pick
+one of the three demo people on the cards under the box. The answer card shows the question,
+one to three headline numbers, the explanation, a small chart where one fits (the week's sleep
+or steps, active minutes, two periods, or a scatter for a correlation) and a "How this answer
+was computed" section listing each tool call with its arguments and result. The headline
+numbers are read from the tool results and only formatted, like the chart. Before the first
+question the page shows one example answer, a real run saved in
+`data/demo/example_answer.json`; a test checks that today's tools still return the results
+stored in it. All styling is in `assets/style.css`. When an answer uses the CDC guideline lookup, CDC's credit
 line is shown under it. Charts are drawn from tool results or from the daily table with the
 tool's own arguments, never from the model's text.
 
