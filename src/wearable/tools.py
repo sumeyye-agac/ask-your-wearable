@@ -134,8 +134,8 @@ def weekly_summary(df: pd.DataFrame, metric: str, end_date: str | None = None,
     Returns the window, days with and without data, mean, median, the highest and lowest
     day with their distance from the mean, the range (highest minus lowest), every day's
     value (None when missing), and for steps and active minutes the weekly total. With a
-    threshold it also returns how many days are at or above it and below it, and the mean
-    minus the threshold. For the sleep metrics every value also comes as text in hours and
+    threshold it also returns how many days, and which dates, are at or above it and below
+    it, and the mean minus the threshold. For the sleep metrics every value also comes as text in hours and
     minutes ("<key>_text"), so nothing has to be converted by the reader. Steps and active
     minutes are whole numbers. Every difference is the difference of the rounded values
     shown, so a reader who checks the subtraction gets the same number.
@@ -178,6 +178,8 @@ def weekly_summary(df: pd.DataFrame, metric: str, end_date: str | None = None,
             "value": shown,
             "days_at_or_above": int((present >= threshold).sum()),
             "days_below": int((present < threshold).sum()),
+            "dates_at_or_above": [_day(d) for d in present.index[present >= threshold]],
+            "dates_below": [_day(d) for d in present.index[present < threshold]],
             "mean_minus_threshold": _num(mean - shown, m.digits) if present.size else None,
         }, m, "value", "mean_minus_threshold")
     return _add_text(out, m, "mean", "median", "range")
