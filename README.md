@@ -3,8 +3,8 @@
 Ask plain-language questions about daily wearable data (steps, sleep, heart rate) and get
 answers that come from tested Python functions, not from a language model doing arithmetic.
 
-Status: in progress. The data layer and the five analysis tools exist and are tested.
-The language-model loop, the web app and the evaluation are not built yet.
+Status: in progress. The data layer, seven tools and the language-model loop exist, are tested
+and run from the terminal. The web app and the evaluation are not built yet.
 
 ## Data: what the demo data can and cannot answer
 
@@ -28,6 +28,9 @@ built from that dataset with `scripts/build_daily.py`.
 - Sleep is in Fitbit's older format: each minute is asleep, restless or awake. There are no
   sleep stages.
 - Heart rate is raw readings every few seconds. It starts on 29 March and exists for 15 users.
+- Intensity is one code per minute, 0 to 3, in both months. Fitbit's Web API reference names the
+  levels: 0 sedentary, 1 lightly active, 2 fairly active, 3 very active. The cut-offs between
+  levels are not given there.
 
 ### How a day is counted
 
@@ -40,9 +43,15 @@ built from that dataset with `scripts/build_daily.py`.
 - **Heart rate:** the mean of all readings in the day, only if the day has readings in 12 or
   more different hours. This mostly reflects how active the day was; it is not resting heart rate.
 
+- **Active minutes:** `fairly_active_minutes` and `very_active_minutes` count the day's minutes
+  at intensity level 2 and 3, only if all 1440 minutes are present and at least one minute is
+  above sedentary. A day that passes can have 0 active minutes; that is a measurement, not a gap.
+
 As a check, the nightly sleep built this way was compared with Fitbit's own `sleepDay` table
 for the second month. On nights with a single Fitbit sleep record, minutes asleep match exactly
-on 332 of 346 nights.
+on 332 of 346 nights. The active minutes were compared with Fitbit's `dailyIntensities` table
+in the same way: on 903 complete days, fairly active minutes match exactly on 99.9% and very
+active minutes on 99.8%.
 
 ### Coverage
 
@@ -51,6 +60,7 @@ on 332 of 346 nights.
 | Steps | 34 | 54 (3–61) | 31 | 30 |
 | Sleep | 22 | 43 (2–62) | 13 | 14 |
 | Mean heart rate | 13 | 34 (10–44) | 10 | 9 |
+| Active minutes | 34 | 54 (3–61) | 31 | 30 |
 
 Only 8 users have at least 7 days on which all three metrics are present. The demo offers
 the three users with the most complete data: `6962181067`, `5553957443` and `5577150313`.
@@ -85,10 +95,17 @@ Even these have gaps; user `5577150313` has sleep on only 2 of the last 7 nights
   A correlation also says nothing about cause.
 - Wellness information only. The app does not diagnose anything.
 - The guideline lookup holds two CDC pages (sleep duration, physical activity for adults) and
-  nothing else. The activity recommendation is in minutes of moderate or vigorous activity; the
-  data has steps only, so the app states the recommendation and says it cannot check it. The
-  sleep comparison uses 7 hours, the lower bound for every adult age group, because the app does
+  nothing else. The sleep comparison uses 7 hours, the lower bound for every adult age group, because the app does
   not know the user's age, and it counts the night's main sleep only (no naps).
+- "Am I active enough?" compares Fitbit's fairly and very active minutes with CDC's 150 moderate
+  or 75 vigorous minutes a week. This is approximate. Fitbit's levels are the device's own
+  per-minute estimate; CDC defines intensity by effort (3 to 5.9 METs and 6.0 METs or more, or
+  the talk test). Every answer carries that caveat. CDC also accepts an equivalent combination
+  of the two but its page gives no conversion, so none is computed. Muscle-strengthening
+  activity is not in the data and cannot be checked.
+- The last day of the export, 12 May, is partial, so "this week" has 6 days of steps and active
+  minutes for the demo users. A weekly total is then a lower bound: the app says a target was
+  reached when the 6 days already reach it, and otherwise says it cannot tell.
 
 ## Guideline sources
 
