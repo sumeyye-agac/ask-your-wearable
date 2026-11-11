@@ -14,7 +14,10 @@ The demo uses the public Fitbit dataset by Furberg, Brinton, Keating & Ortiz (RT
 It has two monthly exports from Amazon Mechanical Turk volunteers, 12 March to 12 May 2016.
 
 `data/demo/demo_daily.csv` is a derived file: one row per user and day for three users,
-built from that dataset with `scripts/build_daily.py`.
+built from that dataset with `scripts/build_daily.py`. `data/demo/raw_sample/` holds one
+unchanged day of four raw tables per demo user (about 110 KB, built with
+`scripts/build_raw_sample.py`), for the app's Data tab. Both are shared under the dataset's
+CC BY 4.0 licence.
 
 ### What is in the exports
 
@@ -150,6 +153,7 @@ cd ../..
 
 .venv/bin/python scripts/data_coverage.py data/raw   # raw coverage, per table
 .venv/bin/python scripts/build_daily.py data/raw     # daily tables + coverage summary above
+.venv/bin/python scripts/build_raw_sample.py data/raw  # one raw day per demo user, for the app
 .venv/bin/python -m pytest
 ```
 
@@ -183,6 +187,11 @@ Same key setup as above. Then:
 .venv/bin/streamlit run streamlit_app.py     # opens http://localhost:8501
 ```
 
+The page has three tabs. "Ask" is the question box. "How it works" shows the pipeline with
+the decisions and checks recorded here. "Data" describes the dataset and shows the selected
+person's daily table (sortable, downloadable as CSV) and their raw sample day. People are shown
+as Person A, B and C; the real Zenodo id is in each answer's trace and on the Data tab.
+
 Pick one of the three demo users, type a question or click an example, and the app shows the
 answer, a small chart where one fits (the week's sleep or steps, active minutes, two periods,
 or a scatter for a correlation) and a "How this answer was computed" section listing each tool
@@ -196,3 +205,15 @@ address Streamlit reports, or the browser session when it reports none (as on lo
 reloading the page starts a new session). A failed question does not count. API failures
 (no credit, rate limits, outages, a missing key) are shown as a short message, not an error
 page. The app's tests run it headless with the API call replaced, so they cost nothing.
+
+## Next steps
+
+Future work, not planned for this version:
+
+- Compare models on the evaluation question set (tool-selection accuracy, numeric accuracy,
+  unsupported-claim rate), not only Claude Haiku 5.5.
+- An MCP server that exposes the same tools, continuing
+  [mcp-har-benchmark](https://github.com/sumeyye-agac/mcp-har-benchmark).
+- A raw-signal layer: IMU data from a Movesense sensor, with my own human activity recognition
+  model as a tool.
+- An on-device version with a small model, to measure what is lost against the API model.
