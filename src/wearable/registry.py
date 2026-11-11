@@ -57,7 +57,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "once per metric.",
         {"metric": _METRIC,
          "end_date": _date("Last day of the week. Omit for 'this week': the 7 days ending "
-                           "on the last date with data."),
+                           "on the last complete day."),
          "threshold": {"type": "number",
                        "description": "Optional value in the metric's unit to compare the "
                                       "week against, for example 420 for 7 hours of sleep "
@@ -78,7 +78,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
          "preset": {"type": "string", "enum": list(tools.PRESETS),
                     "description": "first_half_vs_second_half splits the whole data range "
                                    "in two. last_4_weeks_vs_previous_4_weeks compares the "
-                                   "28 days ending on the last date with data against the "
+                                   "28 days ending on the last complete day against the "
                                    "28 days before."},
          "period_a_start": _date("First day of period A."),
          "period_a_end": _date("Last day of period A."),
@@ -105,8 +105,8 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "most active day, steps_above_mean: its lead over the window's mean), the top_n "
         "days in descending order, each with steps_above_mean, days with step data, the "
         "dates without step data and the mean steps/day in the window. Days without step "
-        "data are skipped, never counted as inactive. For 'this week' pass the 7 days ending on the last date "
-        "with data.",
+        "data are skipped, never counted as inactive. For 'this week' pass the 7 days "
+        "ending on the last complete day.",
         {"start_date": _date("First day. Omit for the first date with data."),
          "end_date": _date("Last day. Omit for the last date with data."),
          "top_n": {"type": "integer", "enum": list(range(1, tools.MAX_TOP_N + 1)),
@@ -139,14 +139,16 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "Add up one week's active minutes and compare them with CDC's weekly "
         "recommendation for adults. Use it for 'am I active enough?'. Moderate activity is "
         "taken as Fitbit's fairly active minutes and vigorous as Fitbit's very active "
-        "minutes. Returns, for each, total_minutes, recommended_minutes (150 moderate, 75 "
-        "vigorous), total_minus_recommended and reaches_recommendation (true, false, or "
-        "null when days are missing and the total so far is below the target), plus "
-        "reaches_either_alone, days_with_data, missing_dates, each day's minutes, and a "
-        "caveat. The caveat says Fitbit's intensity estimate is not CDC's definition; "
-        "always pass it on in the answer.",
+        "minutes. The main result is 'combined': moderate_equivalent_minutes (fairly active "
+        "+ 2 x very active, by CDC's rule of thumb that 1 vigorous minute is about 2 "
+        "moderate minutes) against 150, with total_minus_recommended and "
+        "reaches_recommendation (true, false, or null when days are missing and the total "
+        "so far is below the target). 'moderate' and 'vigorous' give the two totals on "
+        "their own against 150 and 75, as detail. Also returns days_with_data, "
+        "missing_dates, each day's minutes, and a caveat. The caveat says Fitbit's "
+        "intensity estimate is not CDC's definition; always pass it on in the answer.",
         {"end_date": _date("Last day of the week. Omit for 'this week': the 7 days ending "
-                           "on the last date with data.")},
+                           "on the last complete day.")},
         [],
     ),
     _spec(
