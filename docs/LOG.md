@@ -267,3 +267,24 @@ One entry per working session. Newest at the bottom. Format is in `CLAUDE.md`.
   the user's request. The Inter font loads from Google Fonts, so the page sends a request there.
   Small derived phrases ("about 1 h 56 min above the average" is from the tool; the Turkish
   "most nights around 7 hours" kind is not) remain for the day 7 metric. Next is day 6.
+
+### 2026-11-11
+- Decisions: the MCP server stays on day 8 as in the brief, so it is out of the README's
+  "Next steps"; loading the Inter font from Google Fonts is fine.
+- Chart fixes from browser review: the comparison chart's title no longer reads "Mean mean
+  heart rate (bpm)" (now "<metric>: daily average in each period"), and a test builds every
+  chart for every metric and fails on any repeated word in a title or axis. Its bars are
+  labelled "First half" / "Second half", "Previous 4 weeks" / "Last 4 weeks", or "Period A" /
+  "Period B" for custom dates, horizontally, with the dates in the tooltip. All charts are now
+  Altair (shipped with Streamlit) in the theme's accent #2A7F7A; stacked active minutes use the
+  accent and a lighter tint.
+- Significance wording: `compare_periods` and `correlation` results now carry
+  `significance_test` saying the tool does not run one, and the prompt says to attribute the
+  missing test to the tool, never to the data. Two real runs through the page ($0.0015 each):
+  both answers said the tool does not run a significance test, and the page drew the
+  comparison chart in the accent colour with horizontal labels and the dates in the tooltip.
+- Person picker options read "Person A · 59 days of steps". 183 tests.
+- How to check it: `.venv/bin/python -m pytest && .venv/bin/streamlit run streamlit_app.py`, then open http://localhost:8501
+- Open issues: one significance answer added its own comparison ("the 1,340-step gap is
+  smaller than the typical variation from one day to the next"), which no tool returned; this
+  goes with the other derived phrases into the day 7 unsupported-claim metric. Next is day 6.
