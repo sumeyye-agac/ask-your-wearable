@@ -533,3 +533,62 @@ def test_sleep_answer_leads_with_minutes_asleep_even_if_time_in_bed_came_last(mo
     at = run_example(at, 0)                          # "How was my sleep this week?"
     assert at.metric[0].label == "Average sleep"
     assert any("Hours asleep per day" in c.value for c in at.caption)
+
+
+# --- deployment: secrets and what the hosted app needs -------------------------
+
+def test_api_key_is_read_from_streamlit_secrets_and_never_shown(monkeypatch):
+    asked = stub_ask(monkeypatch, simple_result())
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")        # nothing in the environment
+    seen = {}
+    monkeypatch.setattr(anthropic, "Anthropic", lambda **kwargs: seen.update(kwargs) or object())
+    at = AppTest.from_file(APP)
+    at.secrets["ANTHROPIC_API_KEY"] = "secret-from-streamlit"
+    at.run()
+    type_and_submit(at, "How was my sleep this week?")
+    assert asked == ["How was my sleep this week?"] and not at.error
+    assert seen == {"api_key": "secret-from-streamlit"}
+    page = " ".join(str(e.value) for e in list(at.markdown) + list(at.caption) + list(at.code))
+    assert "secret-from-streamlit" not in page
+
+
+def test_model_id_can_be_set_in_streamlit_secrets(monkeypatch):
+    models = []
+
+    def fake(client, df, question, **kwargs):
+        models.append(kwargs["model"])
+        return AgentResult(question=question, answer="Fine.", status="answered",
+                           model=kwargs["model"], steps=1)
+    monkeypatch.setattr(wearable.agent, "ask", fake)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-used")
+    monkeypatch.delenv("WEARABLE_MODEL", raising=False)
+    at = AppTest.from_file(APP)
+    at.secrets["WEARABLE_MODEL"] = "some-other-model"
+    at.run()
+    type_and_submit(at, "How was my sleep this week?")
+    assert models == ["some-other-model"]
+
+
+def test_the_key_is_not_written_to_the_server_log(monkeypatch, capsys):
+    error = anthropic.AuthenticationError(
+        "invalid x-api-key", body=None,
+        response=httpx2.Response(401, request=httpx2.Request("POST", "https://example.org")))
+    stub_ask(monkeypatch, error=error)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "key-that-must-not-leak")
+    at = AppTest.from_file(APP).run()
+    type_and_submit(at, "How was my sleep this week?")
+    assert at.error
+    captured = capsys.readouterr()
+    assert "key-that-must-not-leak" not in captured.out + captured.err
+
+
+def test_requirements_file_is_installable_without_this_repo():
+    # Streamlit Community Cloud installs requirements.txt as it is: pinned packages only,
+    # no local path, and every package the app imports directly.
+    lines = [line.split("#")[0].strip()
+             for line in (Path(APP).parent / "requirements.txt").read_text().splitlines()]
+    lines = [line for line in lines if line]
+    assert all("==" in line and not line.startswith(("-", ".")) for line in lines), lines
+    names = {line.split("==")[0] for line in lines}
+    assert {"streamlit", "anthropic", "pandas", "altair", "python-dotenv"} <= names
+    assert "pytest" not in names

@@ -1,0 +1,4 @@
+# Local development and CI: the app's requirements, the tests, and the wearable package.
+-r requirements.txt
+pytest==9.2.0
+-e .

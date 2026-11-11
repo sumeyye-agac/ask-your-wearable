@@ -3,9 +3,11 @@
     streamlit run streamlit_app.py
 
 Each question is answered on its own by the tool-use loop in wearable.agent, on one demo
-user's daily table. The API key is read from ANTHROPIC_API_KEY (a .env file in the repo
-root is loaded if present); the model id from WEARABLE_MODEL. Every question's trace is
-appended to logs/trace.jsonl (git-ignored), or to the file named by WEARABLE_TRACE.
+user's daily table. The API key ANTHROPIC_API_KEY comes from Streamlit secrets when the app
+is deployed and from the environment or a .env file in the repo root locally; the model id
+WEARABLE_MODEL is looked up the same way. The key is never printed or logged. Every
+question's trace is appended to logs/trace.jsonl (git-ignored), or to the file named by
+WEARABLE_TRACE.
 """
 
 from __future__ import annotations
@@ -21,6 +23,11 @@ import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
+REPO = Path(__file__).resolve().parent
+# Streamlit Community Cloud installs requirements.txt but not this repo's own package, so
+# src/ is put on the import path here. Harmless where the package is installed.
+sys.path.insert(0, str(REPO / "src"))
+
 from wearable.agent import (ANSWERED, DEFAULT_MODEL, AgentResult, append_trace, ask,
                             result_from_record)
 from wearable.app_text import (ABOUT_DATA, AUTHOR, DATASET_CREDIT, HEADLINE, LIMITS, PIPELINE,
@@ -28,10 +35,9 @@ from wearable.app_text import (ABOUT_DATA, AUTHOR, DATASET_CREDIT, HEADLINE, LIM
 from wearable.presentation import (NOT_CONFIGURED, STATUS_MESSAGES, ChartSpec, UsageLimiter,
                                    ACCENT, METRIC_ICONS, api_error_message, chart_for,
                                    chart_heading, credits, headline_numbers, person_card,
-                                   person_names, to_altair)
+                                   person_names, to_altair, visitor_key)
 from wearable.schema import to_daily_frame
 
-REPO = Path(__file__).resolve().parent
 DEMO = REPO / "data/demo/demo_daily.csv"
 RAW_SAMPLE = REPO / "data/demo/raw_sample"
 LOGO = REPO / "assets/logo.svg"
@@ -89,26 +95,42 @@ def limiter() -> UsageLimiter:
     return UsageLimiter(per_visitor=QUESTIONS_PER_VISITOR, daily_usd=APP_DAILY_USD)
 
 
+def setting(name: str) -> str | None:
+    """A configuration value: Streamlit secrets first (the deployed app), then the
+    environment, which locally includes the repo's .env file. None if unset or empty."""
+    try:
+        if name in st.secrets:
+            return str(st.secrets[name]) or None
+    except FileNotFoundError:  # no secrets.toml, the normal case on a developer's machine
+        pass
+    load_dotenv(REPO / ".env")
+    return os.environ.get(name) or None
+
+
 @st.cache_resource
 def client() -> anthropic.Anthropic | None:
-    load_dotenv(REPO / ".env")
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        return None
-    return anthropic.Anthropic()
+    key = setting("ANTHROPIC_API_KEY")
+    return anthropic.Anthropic(api_key=key) if key else None
 
 
 def visitor_id() -> str:
-    """The visitor's IP address when Streamlit knows it, else this browser session.
+    """Who this question is counted against; the rule is in presentation.visitor_key.
 
-    st.context.ip_address is None on localhost and can be spoofed, so this is a guard
-    against casual overuse, not a security measure.
+    None of the sources is proof of identity (headers can be forged, a session ends on
+    reload), so this guards against casual overuse. The app-wide daily budget is what
+    protects the API credit.
     """
-    ip = st.context.ip_address
-    if isinstance(ip, str) and ip:
-        return f"ip:{ip}"
     if "session_id" not in st.session_state:
         st.session_state.session_id = uuid.uuid4().hex
-    return f"session:{st.session_state.session_id}"
+    forwarded = st.context.headers.get_all("X-Forwarded-For")
+    visitor = visitor_key(st.context.ip_address, ",".join(forwarded),
+                          st.session_state.session_id)
+    if not st.session_state.get("visitor_kind_logged"):
+        # Only the kind of source, never the address: enough to see in the host's logs
+        # how visitors are being told apart.
+        print(f"Visitor identified by: {visitor.split(':', 1)[0]}", file=sys.stderr)
+        st.session_state.visitor_kind_logged = True
+    return visitor
 
 
 def answer(question: str, user_id: str, df: pd.DataFrame) -> None:
@@ -125,7 +147,7 @@ def answer(question: str, user_id: str, df: pd.DataFrame) -> None:
         limiter().finish(visitor, 0.0, failed=True)
         st.session_state.outcome = {"error": NOT_CONFIGURED, "question": question}
         return
-    model = os.environ.get("WEARABLE_MODEL", DEFAULT_MODEL)
+    model = setting("WEARABLE_MODEL") or DEFAULT_MODEL
     try:
         with st.spinner("Computing the answer..."):
             result = ask(api, df, question, model=model)

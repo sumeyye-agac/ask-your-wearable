@@ -1,6 +1,7 @@
+# What the deployed app needs. Streamlit Community Cloud installs exactly this file.
+# Development and tests: requirements-dev.txt.
 pandas==3.1.1
-pytest==9.2.0
 anthropic==2.8.0
 python-dotenv==1.2.4
 streamlit==1.67.0
--e .
+altair==6.3.0
