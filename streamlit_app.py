@@ -26,7 +26,7 @@ from wearable.app_text import (ABOUT_DATA, AUTHOR, DATASET_CREDIT, INTRO, LIMITS
                                PIPELINE_DOT, RAW_SAMPLE_NOTE, RAW_TABLES)
 from wearable.presentation import (NOT_CONFIGURED, STATUS_MESSAGES, ChartSpec, UsageLimiter,
                                    ACCENT, api_error_message, chart_for, credits, person_names,
-                                   person_option, person_profile, to_altair)
+                                   person_profile, to_altair)
 from wearable.schema import to_daily_frame
 
 REPO = Path(__file__).resolve().parent
@@ -182,10 +182,12 @@ def show_result(result: AgentResult, df: pd.DataFrame, user_id: str, name: str) 
                    f"about ${result.cost_usd:.4f}.")
 
 
-def use_example(question: str) -> None:
-    # Queued for this run only. The text box is left alone, so an example never mixes
-    # with what the visitor types next.
-    st.session_state.pending = question
+def use_example() -> None:
+    # Queue the clicked example for this run only and clear the pill, so the same example
+    # can be clicked again. The text box is left alone, so an example never mixes with
+    # what the visitor types next.
+    st.session_state.pending = st.session_state.get("example")
+    st.session_state.example = None
 
 
 def use_typed() -> None:
@@ -200,18 +202,27 @@ def no_latex(text: str) -> str:
     return text.replace("$", "\\$")
 
 
+def pick_person(users: dict[str, pd.DataFrame], names: dict[str, str]) -> str:
+    """One compact selection for the whole page; the Data tab reads the same value."""
+    user_id = st.segmented_control("Person", sorted(users), default=sorted(users)[0],
+                                   required=True, format_func=names.get, key="person",
+                                   label_visibility="collapsed")
+    st.caption(person_profile(users[user_id]))
+    outcome = st.session_state.get("outcome")
+    if outcome and outcome.get("user_id") not in (None, user_id):
+        st.session_state.outcome = None  # an answer about another person would mislead
+    return user_id
+
+
 def ask_tab(user_id: str, name: str, df: pd.DataFrame) -> None:
     st.write(INTRO)
-    st.info(WELLNESS_NOTE)
+    st.caption(WELLNESS_NOTE)
+    st.space("small")
 
-    st.write("Try an example:")
-    columns = st.columns(2)
-    for i, example in enumerate(EXAMPLES):
-        columns[i % 2].button(example, key=f"example_{i}", on_click=use_example,
-                              args=(example,), width="stretch")
+    st.pills("Try an example", EXAMPLES, key="example", on_change=use_example)
 
     # The box is emptied after every submit; the question answered is shown above the answer.
-    with st.form("ask"):
+    with st.form("ask", border=False):
         st.text_input("Your question", key="question", max_chars=MAX_QUESTION_CHARS,
                       placeholder="For example: How did my steps change over the two months?")
         st.form_submit_button("Ask", on_click=use_typed)
@@ -223,12 +234,14 @@ def ask_tab(user_id: str, name: str, df: pd.DataFrame) -> None:
 
     outcome = st.session_state.get("outcome")
     if outcome:
+        st.space("small")
         st.markdown(f"**Question:** {escape_markdown(outcome['question'])}")
         if "error" in outcome:
             st.error(outcome["error"])
         else:
             show_result(outcome["result"], df, user_id, name)
 
+    st.space("small")
     left = limiter().remaining(visitor_id())
     st.caption(f"Questions left today: {left} of {QUESTIONS_PER_VISITOR}. Each question is "
                f"answered on its own; the app does not remember earlier questions.")
@@ -277,26 +290,19 @@ def main() -> None:
 
     users = load_users()
     names = person_names(list(users))
-    with st.sidebar:
-        user_id = st.selectbox("Person", sorted(users), key="person",
-                               format_func=lambda uid: person_option(names[uid], users[uid]))
-        st.caption(person_profile(users[user_id]))
-        st.caption("Three people from a public 2016 Fitbit dataset. The Data tab shows their "
-                   "data in full.")
-    name, df = names[user_id], users[user_id]
-    outcome = st.session_state.get("outcome")
-    if outcome and outcome.get("user_id") not in (None, user_id):
-        st.session_state.outcome = None  # an answer about another person would mislead
 
     ask, how, data = st.tabs(["Ask", "How it works", "Data"])
     with ask:
-        ask_tab(user_id, name, df)
+        # The picker is drawn first, inside the Ask tab, and its value drives the whole page.
+        user_id = pick_person(users, names)
+        st.space("small")
+        ask_tab(user_id, names[user_id], users[user_id])
     with how:
         how_tab()
     with data:
-        data_tab(user_id, name, df)
+        data_tab(user_id, names[user_id], users[user_id])
 
-    st.divider()
+    st.space("large")
     st.caption(AUTHOR)
     st.caption(DATASET_CREDIT)
 

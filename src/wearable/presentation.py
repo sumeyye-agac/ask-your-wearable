@@ -209,11 +209,6 @@ def person_names(user_ids: list[str]) -> dict[str, str]:
     return {uid: f"Person {chr(ord('A') + i)}" for i, uid in enumerate(ordered)}
 
 
-def person_option(name: str, df: pd.DataFrame) -> str:
-    """Short text for the person picker, e.g. "Person A · 59 days of steps"."""
-    return f"{name} · {int(df['steps'].notna().sum())} days of steps"
-
-
 def person_profile(df: pd.DataFrame) -> str:
     """One line describing a person's data coverage, from counts in the daily table only."""
     first, last = data_range(df)
@@ -312,4 +307,4 @@ def api_error_message(status_code: int | None, error_type: str | None) -> str:
 
 __all__ = ["ChartSpec", "chart_for", "credits", "user_label", "UsageLimiter",
            "STATUS_MESSAGES", "NOT_CONFIGURED", "api_error_message", "LABELS", "person_names",
-           "person_option", "person_profile", "to_altair", "ACCENT"]
+           "person_profile", "to_altair", "ACCENT"]
