@@ -5,8 +5,9 @@ import pandas as pd
 import pytest
 
 from wearable.schema import to_daily_frame
+from wearable.guidelines import ACTIVITY_CAVEAT
 from wearable.tools import (compare_periods, correlation, correlation_ci, missing_data_report,
-                            most_active_day, weekly_summary)
+                            most_active_day, weekly_active_minutes, weekly_summary)
 
 
 def _frame(**columns) -> pd.DataFrame:
@@ -37,7 +38,7 @@ def test_weekly_summary_explicit_end_date(two_weeks):
     out = weekly_summary(two_weeks, "steps", end_date="2024-01-07")
     # 1000, 2000, 4000, 5000, 6000, 7000 (3rd missing).
     assert out["days_with_data"] == 6
-    assert out["mean"] == 4166.7
+    assert out["mean"] == 4167  # 25000 / 6 = 4166.67, shown as a whole number
     assert "total" in out
 
 
@@ -98,9 +99,9 @@ def test_compare_first_half_vs_second_half(two_weeks):
     out = compare_periods(two_weeks, "steps", preset="first_half_vs_second_half")
     assert out["period_a"]["start"] == "2024-01-01" and out["period_a"]["end"] == "2024-01-07"
     assert out["period_b"]["start"] == "2024-01-08" and out["period_b"]["end"] == "2024-01-14"
-    assert out["period_a"]["mean"] == 4166.7
-    assert out["period_b"]["mean"] == 11000.0
-    assert out["difference_b_minus_a"] == 6833.3
+    assert out["period_a"]["mean"] == 4167
+    assert out["period_b"]["mean"] == 11000
+    assert out["difference_b_minus_a"] == 6833  # the difference of the two means shown
     assert out["percent_change"] == 164.0
     assert out["enough_data"] is True
 
@@ -205,7 +206,7 @@ def test_most_active_day_window_and_top_n(two_weeks):
     out = most_active_day(two_weeks, start_date="2024-01-01", end_date="2024-01-07", top_n=1)
     # The lead over the second day is reported even when top_n=1 hides that day.
     assert out["most_active"] == {"date": "2024-01-07", "weekday": "Sunday", "steps": 7000,
-                                  "steps_above_mean": 2833.3, "steps_above_second": 1000}
+                                  "steps_above_mean": 2833, "steps_above_second": 1000}
     assert len(out["top_days"]) == 1
     assert out["missing"]["dates"] == ["2024-01-03"]
 
@@ -344,3 +345,112 @@ def test_compare_periods_without_enough_data_names_no_higher_period(two_weeks):
     out = compare_periods(two_weeks, "minutes_asleep", preset="first_half_vs_second_half")
     assert out["enough_data"] is False and out["higher_period"] is None
     assert "difference_b_minus_a_text" not in out
+
+
+# --- whole-number steps --------------------------------------------------------
+
+def test_step_values_are_whole_numbers_and_halves_round_up():
+    # Mean 8570.5, as in demo user 6962181067's last week.
+    out = weekly_summary(_frame(steps=[5908, 6815, 4188, 12342, 15448, 6722]), "steps")
+    numbers = [out["mean"], out["median"], out["range"], out["highest"]["value"],
+               out["highest"]["above_mean"], out["lowest"]["below_mean"],
+               *[d["value"] for d in out["daily"] if d["value"] is not None]]
+    assert len(numbers) == 12 and all(isinstance(n, int) for n in numbers)
+    assert out["mean"] == 8571 and out["median"] == 6769  # 8570.5 and 6768.5
+    # Differences are those of the numbers shown: 15448 - 8571 and 8571 - 4188.
+    assert out["highest"]["above_mean"] == 6877 and out["lowest"]["below_mean"] == 4383
+    active = most_active_day(_frame(steps=[5908, 6815, 4188, 12342, 15448, 6722]))
+    assert active["mean_steps"] == 8571
+    assert active["most_active"]["steps_above_mean"] == 6877
+    assert isinstance(active["mean_steps"], int)
+
+
+def test_step_statistics_in_compare_periods_are_whole_numbers():
+    df = _frame(steps=[1000, 1001, 1003, 2000, 2001, 2004])
+    out = compare_periods(df, "steps", period_a_start="2024-01-01", period_a_end="2024-01-03",
+                          period_b_start="2024-01-04", period_b_end="2024-01-06")
+    a, b = out["period_a"], out["period_b"]
+    assert (a["mean"], b["mean"], out["difference_b_minus_a"]) == (1001, 2002, 1001)
+    assert all(isinstance(v, int) for v in (a["mean"], a["std"], b["mean"], b["std"]))
+    assert out["percent_change"] == 100.0  # percentages keep one decimal
+
+
+def test_sleep_and_heart_rate_keep_one_decimal():
+    out = weekly_summary(_frame(minutes_asleep=[443, 298, 541, 489, 469, 452, 516]),
+                         "minutes_asleep")
+    assert out["mean"] == 458.3
+    assert weekly_summary(_frame(mean_hr=[70.0, 71.0, 71.0]), "mean_hr")["mean"] == 70.7
+
+
+# --- active minutes ------------------------------------------------------------
+
+def _active(fairly, very):
+    return _frame(fairly_active_minutes=fairly, very_active_minutes=very)
+
+
+def test_weekly_summary_totals_active_minutes_without_hour_text():
+    out = weekly_summary(_active([10, 20, 30, 0, 40, 25, 26], [0] * 7), "fairly_active_minutes")
+    assert out["unit"] == "minutes" and out["total"] == 151
+    assert out["mean"] == 22 and isinstance(out["mean"], int)  # 21.57
+    assert "mean_text" not in out and "value_text" not in out["daily"][0]
+
+
+def test_weekly_active_minutes_complete_week_reaching_the_moderate_target():
+    out = weekly_active_minutes(_active([10, 20, 30, 0, 40, 25, 26], [5, 0, 10, 0, 0, 20, 0]))
+    assert (out["start"], out["end"]) == ("2024-01-01", "2024-01-07")
+    assert out["days_with_data"] == 7 and out["complete_week"] is True
+    assert out["missing_dates"] == [] and out["note"] is None
+    assert out["moderate"] == {
+        "fitbit_metric": "fairly_active_minutes", "total_minutes": 151,
+        "recommended_minutes": 150, "total_minus_recommended": 1,
+        "reaches_recommendation": True}
+    assert out["vigorous"] == {
+        "fitbit_metric": "very_active_minutes", "total_minutes": 35,
+        "recommended_minutes": 75, "total_minus_recommended": -40,
+        "reaches_recommendation": False}
+    assert out["reaches_either_alone"] is True
+    assert out["daily"][2] == {"date": "2024-01-03", "fairly_active_minutes": 30,
+                               "very_active_minutes": 10}
+
+
+def test_weekly_active_minutes_complete_week_below_both_targets():
+    out = weekly_active_minutes(_active([10] * 7, [10] * 7))
+    assert out["moderate"]["total_minus_recommended"] == -80
+    assert out["vigorous"]["total_minus_recommended"] == -5
+    assert out["moderate"]["reaches_recommendation"] is False
+    assert out["reaches_either_alone"] is False
+    assert "no conversion" in out["combination"]
+
+
+def test_weekly_active_minutes_incomplete_week_is_unknown_not_missed():
+    # 5 days with data: 100 moderate minutes so far (below 150), 80 vigorous (above 75).
+    out = weekly_active_minutes(_active([20, 20, None, 20, 20, None, 20],
+                                        [16, 16, None, 16, 16, None, 16]))
+    assert out["days_with_data"] == 5 and out["complete_week"] is False
+    assert out["missing_dates"] == ["2024-01-03", "2024-01-06"]
+    assert out["moderate"]["total_minutes"] == 100
+    assert out["moderate"]["reaches_recommendation"] is None   # may still have been reached
+    assert out["vigorous"]["reaches_recommendation"] is True   # already reached
+    assert out["reaches_either_alone"] is True
+    assert "Only 5 of 7 days" in out["note"] and "lower bound" in out["note"]
+    assert out["daily"][2]["fairly_active_minutes"] is None
+    below = weekly_active_minutes(_active([20, None, 20, 20, 20, 20, 20], [0, None] + [0] * 5))
+    assert below["reaches_either_alone"] is None
+
+
+def test_weekly_active_minutes_without_data_and_with_an_end_date(two_weeks):
+    out = weekly_active_minutes(two_weeks)   # the fixture has no active minutes
+    assert out["days_with_data"] == 0 and out["moderate"]["total_minutes"] is None
+    assert out["moderate"]["reaches_recommendation"] is None
+    assert out["reaches_either_alone"] is None and out["note"] == "No active-minute data in this week."
+    dated = weekly_active_minutes(_active([30] * 10, [0] * 10), end_date="2024-01-08")
+    assert (dated["start"], dated["end"]) == ("2024-01-02", "2024-01-08")
+    assert dated["moderate"]["total_minutes"] == 210
+
+
+def test_weekly_active_minutes_always_carries_the_caveat_and_the_source():
+    out = weekly_active_minutes(_active([30] * 7, [0] * 7))
+    assert out["caveat"] == ACTIVITY_CAVEAT
+    assert "not the same" in out["caveat"] and "Fitbit" in out["caveat"] and "CDC" in out["caveat"]
+    assert out["recommendation_source"].startswith("CDC") and out["credit"].startswith("Source: CDC.")
+    assert out["url"] == "https://www.cdc.gov/physical-activity-basics/guidelines/adults.html"

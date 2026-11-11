@@ -21,6 +21,15 @@ _CREDIT = ("Source: CDC. The material is available on the CDC website at no char
            "States Government.")
 _LICENCE = ("Public domain (CDC website text), reproduced with credit and without changing "
             "the recommendation; see https://www.cdc.gov/other/agencymaterials.html")
+# Weekly aerobic targets on the CDC page, in minutes. tools.weekly_active_minutes uses them.
+ACTIVITY_WEEKLY_MINUTES = {"moderate": 150, "vigorous": 75}
+
+ACTIVITY_CAVEAT = (
+    "Fitbit's fairly active and very active minutes are the device's own per-minute "
+    "estimate of intensity. CDC defines moderate and vigorous intensity by effort (3 to "
+    "5.9 METs and 6.0 METs or more, or the talk test). The two are not the same, so "
+    "comparing Fitbit minutes with the CDC recommendation is approximate.")
+
 _NOT_ADVICE = ("A general recommendation for the public, not a personal target and not "
                "medical advice. The person's age is not known to this app.")
 
@@ -52,17 +61,24 @@ GUIDELINES: dict[str, dict[str, Any]] = {
         "summary": "Recommended weekly physical activity for adults.",
         "statements": [
             {"population": "Adults",
-             "recommendation": "150 minutes of moderate-intensity physical activity a week; "
-                               "this can also be 75 minutes of vigorous-intensity activity"},
+             "recommendation": "At least 150 minutes of moderate-intensity physical activity "
+                               "a week; this can also be 75 minutes of vigorous-intensity "
+                               "activity or an equivalent combination of the two"},
             {"population": "Adults",
              "recommendation": "At least 2 days of muscle-strengthening activity each week"},
         ],
-        "comparable_metric": None,
-        "threshold": None,
-        "applies_to_data": "This data has steps per day only. It has no minutes of activity, "
-                           "no intensity and no strength training, so it cannot be checked "
-                           "against this recommendation. The CDC page gives no step-count "
-                           "target.",
+        "comparable_metric": "fairly_active_minutes (moderate) and very_active_minutes "
+                             "(vigorous)",
+        "threshold": {"moderate_minutes_per_week": ACTIVITY_WEEKLY_MINUTES["moderate"],
+                      "vigorous_minutes_per_week": ACTIVITY_WEEKLY_MINUTES["vigorous"],
+                      "meaning": "Call weekly_active_minutes to compare a week with these."},
+        "applies_to_data": ACTIVITY_CAVEAT + " The CDC page gives no conversion for an "
+                           "equivalent combination and no step-count target. The data has "
+                           "nothing on muscle-strengthening activity, so that part cannot "
+                           "be checked.",
+        "intensity_definition_source": "CDC, How to Measure Physical Activity Intensity, "
+                                       "https://www.cdc.gov/physical-activity-basics/"
+                                       "measuring/index.html (page date 2025-12-04)",
         "source": "CDC, Adult Activity: An Overview",
         "url": "https://www.cdc.gov/physical-activity-basics/guidelines/adults.html",
         "page_date": "2023-12-20",
