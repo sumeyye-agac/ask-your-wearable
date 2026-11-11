@@ -32,6 +32,15 @@ LABELS = {
 # Sleep is stored in minutes; charts show hours because they are easier to read on an axis.
 TO_HOURS = {"minutes_asleep", "minutes_in_bed"}
 ACCENT = "#2A7F7A"   # the theme's primaryColor in .streamlit/config.toml
+# Material Symbols (rounded) names, shown as ":material/<name>:" in chart titles and pills.
+METRIC_ICONS = {
+    "steps": "directions_walk",
+    "minutes_asleep": "bedtime",
+    "minutes_in_bed": "bedtime",
+    "mean_hr": "monitor_heart",
+    "fairly_active_minutes": "directions_run",
+    "very_active_minutes": "directions_run",
+}
 # Short names for the two periods of each compare_periods preset (earlier period first).
 PERIOD_NAMES = {
     "first_half_vs_second_half": ("First half", "Second half"),
@@ -50,6 +59,7 @@ class ChartSpec:
     x_label: str
     y_label: str
     tooltip: list[str] = field(default_factory=list)   # columns; default is x and y
+    icons: list[str] = field(default_factory=list)     # Material icon names for the title
     x_angle: int = -45                                  # x label angle for bar charts
 
 
@@ -64,7 +74,7 @@ def _weekly_summary(out: dict[str, Any], _df: pd.DataFrame, _args: dict[str, Any
     data["value"] = _axis(metric, data["value"].astype("float64"))
     return ChartSpec(f"{LABELS[metric]} per day, {out['start']} to {out['end']}", "bar",
                      data.rename(columns={"value": LABELS[metric]}), "date", LABELS[metric],
-                     "Date", LABELS[metric])
+                     "Date", LABELS[metric], icons=[METRIC_ICONS[metric]])
 
 
 def _weekly_active_minutes(out: dict[str, Any], _df: pd.DataFrame,
@@ -76,14 +86,15 @@ def _weekly_active_minutes(out: dict[str, Any], _df: pd.DataFrame,
         very: [d["very_active_minutes"] for d in out["daily"]],
     })
     return ChartSpec(f"Active minutes per day, {out['start']} to {out['end']}", "bar",
-                     data, "date", [fairly, very], "Date", "Minutes")
+                     data, "date", [fairly, very], "Date", "Minutes",
+                     icons=[METRIC_ICONS["fairly_active_minutes"]])
 
 
 def _most_active_day(out: dict[str, Any], df: pd.DataFrame, _args: dict[str, Any]) -> ChartSpec:
     window = df.loc[out["start"]:out["end"], "steps"]
     data = pd.DataFrame({"date": window.index.strftime("%Y-%m-%d"), "Steps": window.to_numpy()})
     return ChartSpec(f"Steps per day, {out['start']} to {out['end']}", "bar", data,
-                     "date", "Steps", "Date", "Steps")
+                     "date", "Steps", "Date", "Steps", icons=[METRIC_ICONS["steps"]])
 
 
 def _compare_periods(out: dict[str, Any], _df: pd.DataFrame,
@@ -101,7 +112,8 @@ def _compare_periods(out: dict[str, Any], _df: pd.DataFrame,
     data[label] = _axis(metric, data[label].astype("float64"))
     return ChartSpec(f"{label}: daily average in each period", "bar", data, "Period", label,
                      "Period", f"{label}, daily average",
-                     tooltip=["Period", "Dates", label], x_angle=0)
+                     tooltip=["Period", "Dates", label], x_angle=0,
+                     icons=[METRIC_ICONS[metric]])
 
 
 def _correlation(out: dict[str, Any], df: pd.DataFrame, _args: dict[str, Any]) -> ChartSpec | None:
@@ -116,8 +128,9 @@ def _correlation(out: dict[str, Any], df: pd.DataFrame, _args: dict[str, Any]) -
         y_label += " (later)"
     data = pd.DataFrame({x_label: _axis(x, pairs["x"]).to_numpy(),
                          y_label: _axis(y, pairs["y"]).to_numpy()})
+    icons = list(dict.fromkeys([METRIC_ICONS[x], METRIC_ICONS[y]]))
     return ChartSpec(f"Each point is one day (n = {out['n']})", "scatter", data,
-                     x_label, y_label, x_label, y_label)
+                     x_label, y_label, x_label, y_label, icons=icons)
 
 
 CHARTS: dict[str, Callable[[dict[str, Any], pd.DataFrame, dict[str, Any]], ChartSpec | None]] = {
@@ -142,6 +155,11 @@ def chart_for(tool_calls: list[Any], df: pd.DataFrame) -> ChartSpec | None:
         if spec is not None:
             return spec
     return None
+
+
+def chart_heading(spec: ChartSpec) -> str:
+    """The chart title with its metric icons, as Streamlit markdown."""
+    return " ".join([*(f":material/{name}:" for name in spec.icons), spec.title])
 
 
 def _tint(color: str, amount: float) -> str:
@@ -307,4 +325,5 @@ def api_error_message(status_code: int | None, error_type: str | None) -> str:
 
 __all__ = ["ChartSpec", "chart_for", "credits", "user_label", "UsageLimiter",
            "STATUS_MESSAGES", "NOT_CONFIGURED", "api_error_message", "LABELS", "person_names",
-           "person_profile", "to_altair", "ACCENT"]
+           "person_profile", "to_altair", "ACCENT",
+           "METRIC_ICONS", "chart_heading"]
