@@ -3,7 +3,7 @@
 Ask plain-language questions about daily wearable data (steps, sleep, heart rate) and get
 answers that come from tested Python functions, not from a language model doing arithmetic.
 
-Status: in progress. The data layer and the first three analysis tools exist and are tested.
+Status: in progress. The data layer and the five analysis tools exist and are tested.
 The language-model loop, the web app and the evaluation are not built yet.
 
 ## Data: what the demo data can and cannot answer
