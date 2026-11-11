@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 is the version the app is developed and deployed with;
+        # 3.12 is Streamlit Community Cloud's default.
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      # No API key is needed: the tests replace the API call.
+      - run: python -m pytest
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          push: false
+          tags: ask-your-wearable:ci
+      # The image holds requirements.txt and the repo files only, like Streamlit Community
+      # Cloud. Run the page once without a key: it must render with no exception.
+      - name: Run the page inside the image
+        run: >
+          docker run --rm --entrypoint python ask-your-wearable:ci -c
+          "from streamlit.testing.v1 import AppTest;
+          at = AppTest.from_file('streamlit_app.py', default_timeout=60).run();
+          assert not at.exception, at.exception;
+          print('page rendered,', len(at.markdown), 'markdown blocks')"
+      - name: Start the server and check its health endpoint
+        run: |
+          docker run -d --name app -p 8501:8501 ask-your-wearable:ci
+          for i in $(seq 1 30); do
+            if curl --silent --fail http://localhost:8501/_stcore/health; then exit 0; fi
+            sleep 2
+          done
+          docker logs app
+          exit 1
