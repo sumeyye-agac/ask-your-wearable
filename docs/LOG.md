@@ -178,3 +178,30 @@ One entry per working session. Newest at the bottom. Format is in `CLAUDE.md`.
   calling `get_guideline`, and one answer mentioned "general adult guidelines" without naming a
   source. Both activity answers called the window "last week" although the prompt defines it as
   "this week". These belong in the day 7 evaluation. Next is day 5: the Streamlit UI.
+
+### 2026-11-11
+- Approved: the "last 4 weeks" preset is anchored on the last complete day, like "this week".
+- Day 5: Streamlit app in `streamlit_app.py` (Streamlit 1.67.0, latest on PyPI today): demo
+  user dropdown, question box, five example buttons, the answer, one chart where it fits
+  (week of sleep or steps, active minutes, two periods, correlation scatter), an expander
+  "How this answer was computed" with every tool call's arguments and result, the CDC credit
+  line whenever a result carries one, a wellness note, and the Zenodo attribution in the footer.
+  Testable logic is in `wearable/presentation.py`; `tools.paired_days` was split out of
+  `correlation` so the scatter plots exactly the pairs the tool counted.
+- Limits: 10 questions per visitor per UTC day and an estimated $1.00 per UTC day for the whole
+  app, in memory. Visitor = `st.context.ip_address` (documented; None on localhost, spoofable)
+  or else the browser session. Failures get a short message: 402 / `billing_error` is "out of
+  credit" (status and type from the SDK's error table), 401/403, 429, 5xx and network errors
+  each have their own text, anything else a generic one. 133 tests, including headless
+  `AppTest` runs of the page with the API call stubbed.
+- Ran two real questions through the page script: "Which day was I most active?" (1 tool call,
+  steps chart, $0.0014) and "Is my sleep enough?" (get_guideline then weekly_summary, hours
+  asleep chart, CDC credit shown, $0.0026). Not deployed.
+- How to check it: `.venv/bin/python -m pytest && .venv/bin/streamlit run streamlit_app.py`, then open http://localhost:8501
+- Open issues: unverified whether `st.context.ip_address` on Community Cloud gives each
+  visitor's own address or a shared proxy address; if shared, all visitors share 10 questions,
+  so check it on day 6. Not verified what the API returns when a Console spend limit (rather
+  than the credit balance) is reached; whatever it is, the visitor gets a message, not a crash.
+  Limits reset when the app restarts, so the Console spend limit stays the real backstop.
+  On localhost, reloading the page resets a visitor's count. This log entry is not committed.
+  Next is day 6: deploy and CI.
