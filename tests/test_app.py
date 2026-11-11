@@ -67,7 +67,9 @@ def test_page_renders_with_tabs_people_examples_and_notes():
     at = AppTest.from_file(APP).run()
     assert not at.exception
     assert [t.label for t in at.tabs][:3] == ["Ask", "How it works", "Data"]
-    assert at.sidebar.selectbox[0].options == ["Person A", "Person B", "Person C"]
+    assert at.sidebar.selectbox[0].options == ["Person A · 59 days of steps",
+                                               "Person B · 57 days of steps",
+                                               "Person C · 61 days of steps"]
     assert "59 days of steps, 58 nights of sleep" in at.sidebar.caption[0].value
     assert len([b for b in at.button if b.key and b.key.startswith("example_")]) == 5
     assert "not medical advice" in at.info[0].value
@@ -232,3 +234,30 @@ def test_question_is_shown_with_an_error_too():
     at = run_example(AppTest.from_file(APP).run(), 2)
     assert "no API key" in at.error[0].value
     assert "walk less" in shown_question(at)
+
+
+def test_comparison_chart_is_drawn_in_the_theme_colour_with_short_labels(monkeypatch):
+    import json
+    import pandas as pd
+    from wearable.registry import run_tool
+    from wearable.schema import to_daily_frame
+    table = pd.read_csv(Path(APP).parent / "data/demo/demo_daily.csv", dtype={"user_id": str})
+    df = to_daily_frame(table[table.user_id == "5553957443"].drop(columns="user_id"))
+    args = {"metric": "mean_hr", "preset": "first_half_vs_second_half"}
+    result = AgentResult(question="", answer="Higher in the second half.", status="answered",
+                         model="claude-haiku-5-5", steps=2,
+                         tool_calls=[ToolCall(1, "compare_periods", args,
+                                              run_tool(df, "compare_periods", args), False)])
+    stub_ask(monkeypatch, result)
+    at = run_example(AppTest.from_file(APP).run(), 0)
+    assert any(c.value == "Mean heart rate (bpm): daily average in each period"
+               for c in at.caption)
+    charts = at.get("vega_lite_chart")
+    assert len(charts) == 1
+    spec = json.loads(charts[0].proto.spec)
+    assert spec["mark"]["color"] == "#2A7F7A"
+    assert spec["encoding"]["x"]["axis"]["labelAngle"] == 0
+    assert [t["field"] for t in spec["encoding"]["tooltip"]] == [
+        "Period", "Dates", "Mean heart rate (bpm)"]
+    # Streamlit sends the rows separately from the spec; the period names themselves are
+    # checked in test_presentation.py.

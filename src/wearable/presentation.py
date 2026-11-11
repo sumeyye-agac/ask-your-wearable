@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any, Callable
 
+import altair as alt
 import pandas as pd
 
 from wearable.tools import data_range, paired_days
@@ -30,6 +31,13 @@ LABELS = {
 }
 # Sleep is stored in minutes; charts show hours because they are easier to read on an axis.
 TO_HOURS = {"minutes_asleep", "minutes_in_bed"}
+ACCENT = "#2A7F7A"   # the theme's primaryColor in .streamlit/config.toml
+# Short names for the two periods of each compare_periods preset (earlier period first).
+PERIOD_NAMES = {
+    "first_half_vs_second_half": ("First half", "Second half"),
+    "last_4_weeks_vs_previous_4_weeks": ("Previous 4 weeks", "Last 4 weeks"),
+    None: ("Period A", "Period B"),
+}
 
 
 @dataclass
@@ -41,6 +49,8 @@ class ChartSpec:
     y: str | list[str]
     x_label: str
     y_label: str
+    tooltip: list[str] = field(default_factory=list)   # columns; default is x and y
+    x_angle: int = -45                                  # x label angle for bar charts
 
 
 def _axis(metric: str, values: pd.Series) -> pd.Series:
@@ -82,14 +92,16 @@ def _compare_periods(out: dict[str, Any], _df: pd.DataFrame,
         return None
     metric = out["metric"]
     periods = [out["period_a"], out["period_b"]]
+    label = LABELS[metric]
     data = pd.DataFrame({
-        "period": [f"{p['start']} to {p['end']}" for p in periods],
-        "mean": [p["mean"] for p in periods],
+        "Period": list(PERIOD_NAMES.get(out["preset"], PERIOD_NAMES[None])),
+        "Dates": [f"{p['start']} to {p['end']}" for p in periods],
+        label: [p["mean"] for p in periods],
     })
-    data["mean"] = _axis(metric, data["mean"].astype("float64"))
-    label = f"Mean {LABELS[metric][0].lower()}{LABELS[metric][1:]}"
-    return ChartSpec(f"{label}, two periods", "bar", data.rename(columns={"mean": label}),
-                     "period", label, "Period", label)
+    data[label] = _axis(metric, data[label].astype("float64"))
+    return ChartSpec(f"{label}: daily average in each period", "bar", data, "Period", label,
+                     "Period", f"{label}, daily average",
+                     tooltip=["Period", "Dates", label], x_angle=0)
 
 
 def _correlation(out: dict[str, Any], df: pd.DataFrame, _args: dict[str, Any]) -> ChartSpec | None:
@@ -132,6 +144,47 @@ def chart_for(tool_calls: list[Any], df: pd.DataFrame) -> ChartSpec | None:
     return None
 
 
+def _tint(color: str, amount: float) -> str:
+    """color mixed with white; amount 0 keeps it, 1 gives white."""
+    rgb = [int(color.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4)]
+    return "#" + "".join(f"{round(c + (255 - c) * amount):02X}" for c in rgb)
+
+
+def to_altair(spec: ChartSpec, accent: str = ACCENT) -> alt.Chart:
+    """The chart in the accent color. Field names are passed explicitly because labels such
+    as "Mean heart rate (bpm)" would otherwise be parsed as aggregate shorthand."""
+    data = spec.data
+    numeric = {c for c in data.columns if pd.api.types.is_numeric_dtype(data[c])}
+
+    def enc_type(column: str) -> str:
+        return "quantitative" if column in numeric else "nominal"
+
+    tips = [alt.Tooltip(field=c, type=enc_type(c), title=c,
+                        format=".1f" if c in numeric else "")
+            for c in (spec.tooltip or [spec.x, *([spec.y] if isinstance(spec.y, str) else spec.y)])]
+    if spec.kind == "scatter":
+        return alt.Chart(data).mark_circle(color=accent, size=60, opacity=0.8).encode(
+            x=alt.X(field=spec.x, type="quantitative", title=spec.x_label,
+                    scale=alt.Scale(zero=False)),
+            y=alt.Y(field=spec.y, type="quantitative", title=spec.y_label,
+                    scale=alt.Scale(zero=False)),
+            tooltip=tips)
+    x = alt.X(field=spec.x, type="nominal", title=spec.x_label, sort=None,
+              axis=alt.Axis(labelAngle=spec.x_angle))
+    if isinstance(spec.y, list):  # stacked bars, one colour step per series
+        colors = [accent, _tint(accent, 0.55)][:len(spec.y)]
+        return alt.Chart(data).transform_fold(spec.y, as_=["series", "value"]).mark_bar().encode(
+            x=x, y=alt.Y(field="value", type="quantitative", title=spec.y_label),
+            color=alt.Color(field="series", type="nominal", title=None,
+                            scale=alt.Scale(domain=spec.y, range=colors),
+                            legend=alt.Legend(orient="bottom")),
+            tooltip=[alt.Tooltip(field=spec.x, type="nominal", title=spec.x_label),
+                     alt.Tooltip(field="series", type="nominal", title="Series"),
+                     alt.Tooltip(field="value", type="quantitative", title=spec.y_label)])
+    return alt.Chart(data).mark_bar(color=accent).encode(
+        x=x, y=alt.Y(field=spec.y, type="quantitative", title=spec.y_label), tooltip=tips)
+
+
 def credits(tool_calls: list[Any]) -> list[str]:
     """Distinct "credit" lines from successful tool results, in the order they appeared."""
     seen: list[str] = []
@@ -154,6 +207,11 @@ def person_names(user_ids: list[str]) -> dict[str, str]:
     if len(ordered) > 26:
         raise ValueError("At most 26 people can be named with a letter.")
     return {uid: f"Person {chr(ord('A') + i)}" for i, uid in enumerate(ordered)}
+
+
+def person_option(name: str, df: pd.DataFrame) -> str:
+    """Short text for the person picker, e.g. "Person A · 59 days of steps"."""
+    return f"{name} · {int(df['steps'].notna().sum())} days of steps"
 
 
 def person_profile(df: pd.DataFrame) -> str:
@@ -254,4 +312,4 @@ def api_error_message(status_code: int | None, error_type: str | None) -> str:
 
 __all__ = ["ChartSpec", "chart_for", "credits", "user_label", "UsageLimiter",
            "STATUS_MESSAGES", "NOT_CONFIGURED", "api_error_message", "LABELS", "person_names",
-           "person_profile"]
+           "person_option", "person_profile", "to_altair", "ACCENT"]

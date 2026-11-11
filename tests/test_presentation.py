@@ -1,4 +1,5 @@
 from datetime import date
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -6,7 +7,8 @@ import pytest
 from wearable.agent import ToolCall
 from wearable.guidelines import get_guideline
 from wearable.presentation import (NOT_CONFIGURED, UsageLimiter, api_error_message, chart_for,
-                                   credits, person_names, person_profile)
+                                   credits, person_names, person_option, person_profile,
+                                   to_altair, ACCENT, PERIOD_NAMES)
 from wearable.registry import run_tool
 from wearable.schema import to_daily_frame
 
@@ -151,3 +153,82 @@ def test_person_profile_names_first_heart_rate_day():
                                       "steps": [1000] * 5,
                                       "mean_hr": [None, None, 70, 72, None]}))
     assert person_profile(df).endswith("heart rate on 2 days (from 3 Mar).")
+
+
+# --- chart titles, period labels, colour -----------------------------------------
+
+def full_frame(n=40):
+    """Every metric present on every day, so each chart can be built for each metric."""
+    x = list(range(n))
+    return to_daily_frame(pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=n),
+        "steps": [5000 + 97 * (v % 11) for v in x],
+        "minutes_asleep": [400 + 7 * (v % 5) for v in x],
+        "minutes_in_bed": [450 + 5 * (v % 7) for v in x],
+        "mean_hr": [70 + v % 9 for v in x],
+        "fairly_active_minutes": [10 + v % 4 for v in x],
+        "very_active_minutes": [5 + v % 3 for v in x]}))
+
+
+def all_specs():
+    df = full_frame()
+    specs = []
+    for metric in ["steps", "minutes_asleep", "minutes_in_bed", "mean_hr",
+                   "fairly_active_minutes", "very_active_minutes"]:
+        specs.append(chart_for([call(df, "weekly_summary", {"metric": metric})], df))
+        specs.append(chart_for([call(df, "compare_periods", {
+            "metric": metric, "preset": "first_half_vs_second_half"})], df))
+        specs.append(chart_for([call(df, "correlation", {
+            "metric_x": "steps" if metric != "steps" else "mean_hr", "metric_y": metric})], df))
+    specs.append(chart_for([call(df, "weekly_active_minutes", {})], df))
+    specs.append(chart_for([call(df, "most_active_day", {})], df))
+    return specs
+
+
+def test_no_chart_title_or_axis_repeats_a_word():
+    for spec in all_specs():
+        for text in (spec.title, spec.x_label, spec.y_label):
+            words = text.lower().replace(",", " ").replace(":", " ").split()
+            assert all(a != b for a, b in zip(words, words[1:])), text
+    titles = {s.title for s in all_specs()}
+    assert "Mean heart rate (bpm): daily average in each period" in titles
+
+
+@pytest.mark.parametrize("preset, names", [
+    ("first_half_vs_second_half", ["First half", "Second half"]),
+    ("last_4_weeks_vs_previous_4_weeks", ["Previous 4 weeks", "Last 4 weeks"]),
+])
+def test_compare_chart_uses_short_period_names_with_dates_in_tooltip(preset, names):
+    df = full_frame(70)
+    spec = chart_for([call(df, "compare_periods", {"metric": "steps", "preset": preset})], df)
+    assert list(spec.data["Period"]) == names and spec.x_angle == 0
+    assert all(" to " in d for d in spec.data["Dates"])
+    assert spec.tooltip == ["Period", "Dates", "Steps"]
+    tips = [t["field"] for t in to_altair(spec).to_dict()["encoding"]["tooltip"]]
+    assert tips == ["Period", "Dates", "Steps"]
+
+
+def test_custom_periods_are_named_a_and_b():
+    df = full_frame()
+    spec = chart_for([call(df, "compare_periods", {
+        "metric": "steps", "period_a_start": "2024-01-01", "period_a_end": "2024-01-07",
+        "period_b_start": "2024-01-15", "period_b_end": "2024-01-21"})], df)
+    assert list(spec.data["Period"]) == list(PERIOD_NAMES[None])
+
+
+def test_charts_use_the_accent_colour():
+    for spec in all_specs():
+        chart = to_altair(spec, "#123456").to_dict()
+        if isinstance(spec.y, list):
+            assert chart["encoding"]["color"]["scale"]["range"][0] == "#123456"
+        else:
+            assert chart["mark"]["color"] == "#123456"
+
+
+def test_default_accent_matches_the_theme():
+    config = (Path(__file__).resolve().parents[1] / ".streamlit/config.toml").read_text()
+    assert f'primaryColor = "{ACCENT}"' in config
+
+
+def test_person_option_gives_a_short_hint(two_weeks):
+    assert person_option("Person A", two_weeks) == "Person A · 10 days of steps"
