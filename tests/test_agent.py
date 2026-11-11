@@ -151,3 +151,23 @@ def test_prompt_names_the_partial_day_when_the_export_stopped_early(two_weeks):
     assert "the last complete day, 2024-01-13 (Saturday)" in prompt
     assert "2024-01-07 to 2024-01-13" in prompt
     assert "Data after 2024-01-13 is from a day that was not recorded in full" in prompt
+
+
+def test_prompt_limits_scope_to_the_data_in_any_language(two_weeks):
+    prompt = agent.system_prompt(two_weeks)
+    assert "only answer questions about this person's wearable data" in prompt
+    assert "a poem" in prompt and "not even briefly" in prompt
+    assert "Every rule here applies in every language." in prompt
+
+
+def test_prompt_forbids_threshold_comparisons_no_tool_returned(two_weeks):
+    prompt = agent.system_prompt(two_weeks)
+    assert "Do not compare daily values with a number yourself." in prompt
+    assert "call weekly_summary with that value \nas threshold".replace("\n", "") \
+        in prompt.replace("\n", "")
+    assert "420 for 7 hours of sleep" in prompt
+
+
+def test_prompt_forbids_guidelines_not_looked_up(two_weeks):
+    prompt = agent.system_prompt(two_weeks).replace("\n", "")
+    assert "unless get_guideline returned it in this conversation" in prompt
