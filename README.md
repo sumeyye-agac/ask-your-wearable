@@ -3,8 +3,8 @@
 Ask plain-language questions about daily wearable data (steps, sleep, heart rate) and get
 answers that come from tested Python functions, not from a language model doing arithmetic.
 
-Status: in progress. The data layer, seven tools and the language-model loop exist, are tested
-and run from the terminal. The web app and the evaluation are not built yet.
+Status: in progress. The data layer, seven tools, the language-model loop and a local web app
+exist and are tested. The app is not deployed yet, and the evaluation is not built.
 
 ## Data: what the demo data can and cannot answer
 
@@ -174,3 +174,25 @@ The model is `claude-haiku-5-5`; set `WEARABLE_MODEL` to change it. A question s
 instead of answering. The cost estimate uses the published prices ($0.10 per million input
 tokens, $0.50 per million output tokens, checked 2026-11-11). It is a guard inside the program,
 not a replacement for the spend limit set in the Claude Console.
+
+### Running the web app locally
+
+Same key setup as above. Then:
+
+```bash
+.venv/bin/streamlit run streamlit_app.py     # opens http://localhost:8501
+```
+
+Pick one of the three demo users, type a question or click an example, and the app shows the
+answer, a small chart where one fits (the week's sleep or steps, active minutes, two periods,
+or a scatter for a correlation) and a "How this answer was computed" section listing each tool
+call with its arguments and result. When an answer uses the CDC guideline lookup, CDC's credit
+line is shown under it. Charts are drawn from tool results or from the daily table with the
+tool's own arguments, never from the model's text.
+
+Limits, both kept in memory and reset when the app restarts: 10 questions per visitor per UTC
+day, and an estimated $1.00 of API spend per UTC day for the whole app. A visitor is the IP
+address Streamlit reports, or the browser session when it reports none (as on localhost, where
+reloading the page starts a new session). A failed question does not count. API failures
+(no credit, rate limits, outages, a missing key) are shown as a short message, not an error
+page. The app's tests run it headless with the API call replaced, so they cost nothing.
