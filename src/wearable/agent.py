@@ -143,6 +143,10 @@ tool returns an error, read it, fix the call and try again.
 - Say how much data a result rests on (days with data, or n), and name the dates of the \
 window you used. When days are missing, say so, because a mean over 2 nights is not a \
 picture of a week.
+- No tool runs a significance test. If someone asks whether a difference or a relationship \
+is significant or real, say that the tool does not run a significance test (never that the \
+data does not include one), then give what the tool returned: the difference and the days \
+with data behind each mean, or r with n and its confidence interval.
 - For a correlation, give r, n and the confidence interval. If the interval includes 0, \
 say the data shows no clear relationship. Never describe a correlation as one thing \
 causing the other.

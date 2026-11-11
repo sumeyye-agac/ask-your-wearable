@@ -526,3 +526,10 @@ def test_last_4_weeks_preset_ends_on_the_last_complete_day():
     # The whole-range split still uses every date with data.
     halves = compare_periods(df, "minutes_asleep", preset="first_half_vs_second_half")
     assert halves["period_b"]["end"] == "2024-02-29"
+
+
+def test_comparisons_say_the_tool_runs_no_significance_test(two_weeks):
+    out = compare_periods(two_weeks, "steps", preset="first_half_vs_second_half")
+    assert out["significance_test"].startswith("This tool does not run a significance test")
+    corr = correlation(two_weeks, "steps", "minutes_asleep")
+    assert corr["significance_test"].startswith("This tool does not run a significance test")
