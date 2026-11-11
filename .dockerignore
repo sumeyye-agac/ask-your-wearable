@@ -1,0 +1,13 @@
+# The image is built from an explicit list of COPY lines; this keeps secrets and local
+# data out of the build context as well.
+.env
+.env.*
+.streamlit/secrets.toml
+.git
+.venv
+data/raw
+data/private
+data/processed
+logs
+**/__pycache__
+.pytest_cache
