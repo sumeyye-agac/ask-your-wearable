@@ -446,6 +446,16 @@ def correlation_ci(r: float, n: int, method: str, level: float = 0.95) -> tuple[
     return math.tanh(z - zq * se), math.tanh(z + zq * se)
 
 
+def paired_days(df: pd.DataFrame, metric_x: str, metric_y: str, lag_days: int,
+                start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
+    """The days correlation uses: metric_x on day d (start <= d <= end) as column "x" and
+    metric_y on day d+lag_days as column "y", indexed by d, only where both exist."""
+    # The daily frame has one row per calendar day, so a row shift is a day shift.
+    y_later = df[metric_y].shift(-lag_days)
+    in_range = (df.index >= start) & (df.index <= end)
+    return pd.DataFrame({"x": df[metric_x], "y": y_later})[in_range].dropna()
+
+
 def correlation(df: pd.DataFrame, metric_x: str, metric_y: str, lag_days: int = 0,
                 method: str = "spearman", start_date: str | None = None,
                 end_date: str | None = None) -> dict[str, Any]:
@@ -486,10 +496,7 @@ def correlation(df: pd.DataFrame, metric_x: str, metric_y: str, lag_days: int = 
     start = _parse_date(start_date, "start_date") if start_date else first
     end = _parse_date(end_date, "end_date") if end_date else last
     _window(df, start, end)  # validates the range
-    # The daily frame has one row per calendar day, so a row shift is a day shift.
-    y_later = df[metric_y].shift(-lag_days)
-    in_range = (df.index >= start) & (df.index <= end)
-    pairs = pd.DataFrame({"x": df[metric_x], "y": y_later})[in_range].dropna()
+    pairs = paired_days(df, metric_x, metric_y, lag_days, start, end)
     n = len(pairs)
 
     out: dict[str, Any] = {
