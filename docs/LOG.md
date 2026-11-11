@@ -94,3 +94,30 @@ One entry per working session. Newest at the bottom. Format is in `CLAUDE.md`.
   plan. No memory between questions. The spend guard is an estimate inside the program; the
   Console spend limit is still the real one. Nothing from this session is committed yet.
   Next is day 5: the Streamlit UI.
+
+### 2026-11-11
+- Committed day 4 in four commits and pushed to `main`.
+- Tools now return the comparisons the model used to compute itself. `most_active_day`: the
+  lead over the second day and over the mean, each top day's distance from the mean, and the
+  dates without step data. `weekly_summary`: highest/lowest distance from the mean, the range,
+  and an optional `threshold` (days at or above, days below, mean minus threshold).
+  `compare_periods`: which period is higher. Minute metrics also come as text ("7 h 38 min"),
+  so the prompt no longer allows any conversion or arithmetic.
+- Added `get_guideline(topic)` in `wearable/guidelines.py` with two topics, both from CDC pages
+  read today: sleep duration (7+ h for 18-60, 7-9 h for 61-64, 7-8 h for 65+) and adult
+  physical activity (150 min moderate or 75 min vigorous a week, 2 days of strength work).
+  Licence checked: CDC website text is public domain with conditions (credit, no change to the
+  substance, no implied endorsement); the credit line travels with every result and is in the
+  README. WHO was not used: copyrighted, licence terms not verified.
+- Reran the 7 questions plus "Is my sleep enough?" and "Am I active enough?" on the real API.
+  All 9 picked the right tools, and I found no number in the answers that is not in a tool
+  result (checked by reading, not by a script). The sleep question chained get_guideline then
+  weekly_summary with threshold 420. The activity question stated the CDC recommendation and
+  said steps cannot be checked against it. 87 tests passing.
+- How to check it: `.venv/bin/python -m pytest && .venv/bin/python scripts/ask.py --user 6962181067 "Is my sleep enough?"`
+- Open issues: tool results are larger, so a question now uses about 9,300-10,200 input tokens
+  (was 7,700-8,600) and still costs about $0.001; the guideline chain costs about $0.002. The
+  model named "CDC" but did not print the full credit line, so the day 5 UI has to show the
+  `credit` field itself. "Is my sleep enough?" looked at the last week only. The sleep
+  threshold of 7 h ignores naps and the user's unknown age. The fixes from this session are
+  not committed yet. Next is day 5: the Streamlit UI.

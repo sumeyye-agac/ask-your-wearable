@@ -84,6 +84,29 @@ Even these have gaps; user `5577150313` has sleep on only 2 of the last 7 nights
   days alike. The intervals are therefore likely too narrow, and this is not corrected for.
   A correlation also says nothing about cause.
 - Wellness information only. The app does not diagnose anything.
+- The guideline lookup holds two CDC pages (sleep duration, physical activity for adults) and
+  nothing else. The activity recommendation is in minutes of moderate or vigorous activity; the
+  data has steps only, so the app states the recommendation and says it cannot check it. The
+  sleep comparison uses 7 hours, the lower bound for every adult age group, because the app does
+  not know the user's age, and it counts the night's main sleep only (no naps).
+
+## Guideline sources
+
+`get_guideline(topic)` is a lookup over two hand-checked pages, not retrieval. Both were read on
+2026-11-11; the numbers are the ones on the pages and the wording around them is shortened.
+
+| Topic | Page | Page date |
+|---|---|---|
+| `sleep_duration` | CDC, [About Sleep](https://www.cdc.gov/sleep/about/index.html) | 2024-05-15 |
+| `physical_activity` | CDC, [Adult Activity: An Overview](https://www.cdc.gov/physical-activity-basics/guidelines/adults.html) | 2023-12-20 |
+
+Source: CDC. The material is available on the CDC website at no charge. Its use here does not
+imply endorsement by CDC, ATSDR, HHS or the United States Government. CDC website text is in the
+public domain under the conditions on its
+[Use of Agency Materials](https://www.cdc.gov/other/agencymaterials.html) page: credit the
+agency, do not change the substantive content, do not imply endorsement. The WHO physical
+activity pages were not used because WHO material is copyrighted and its licence terms were not
+verified.
 
 ## Reproducing
 
