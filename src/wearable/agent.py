@@ -21,7 +21,7 @@ import pandas as pd
 
 from wearable.registry import TOOL_SPECS, run_tool
 from wearable.schema import METRICS
-from wearable.tools import data_range
+from wearable.tools import data_range, last_complete_day
 
 DEFAULT_MODEL = "claude-haiku-5-5"
 MAX_STEPS = 6                 # model requests per question
@@ -86,6 +86,10 @@ def request_cost(usage: Any, model: str) -> float:
 def system_prompt(df: pd.DataFrame) -> str:
     """Instructions for the model, including this user's data range."""
     first, last = data_range(df)
+    anchor = last_complete_day(df)
+    partial = "" if anchor == last else (
+        f" Data after {anchor:%Y-%m-%d} is from a day that was not recorded in full; it is "
+        f"in the table but outside \"this week\".")
     metrics = "\n".join(f"- {m.name} ({m.unit}): {m.description} {m.direction}"
                         for m in METRICS.values())
     return f"""\
@@ -94,9 +98,10 @@ someone exploring a sample dataset. Your answer is shown in an app next to the l
 calls you made, so people can check how it was computed.
 
 The data is a daily table from a Fitbit device, one row per calendar day, covering \
-{first:%Y-%m-%d} to {last:%Y-%m-%d}. The data is historical: "today" and "this week" are \
-anchored on the last date with data, so "this week" is the 7 days ending {last:%Y-%m-%d} \
-and "last week" is the 7 days before that. A missing value means there was no valid \
+{first:%Y-%m-%d} to {last:%Y-%m-%d}. The data is historical: "today", "last night" and \
+"this week" are anchored on the last complete day, {anchor:%Y-%m-%d} ({anchor:%A}). "This \
+week" is the 7 days ending on it, {anchor - pd.Timedelta(days=6):%Y-%m-%d} to \
+{anchor:%Y-%m-%d}, and "last week" is the 7 days before that.{partial} A missing value means there was no valid \
 measurement that day; it never means zero.
 
 The metrics:
@@ -132,14 +137,16 @@ data against it; you can still report what the data shows.
 - For "am I active enough?", call weekly_active_minutes. Its result has a caveat that \
 Fitbit's intensity estimate is not the same as CDC's definition of moderate and vigorous \
 activity. Always include that caveat in the answer, because without it the comparison \
-reads as more exact than it is. If reaches_recommendation is null, say the week is \
+reads as more exact than it is. Lead with the combined figure (moderate-equivalent minutes \
+against 150) and say it uses CDC's rule of thumb that 1 minute of vigorous activity is \
+about the same as 2 minutes of moderate activity; give the separate moderate and vigorous \
+totals as detail. If reaches_recommendation is null, say the week is \
 incomplete and the question cannot be settled, rather than saying the target was missed.
 - This is wellness information, not medical advice. If someone asks whether they have a \
 condition, what a number means for their health, or what treatment to take, say plainly \
 that you cannot diagnose or give medical advice and that a clinician is the right person \
 to ask. You can still report what the data shows.
-- Write a short answer in plain sentences: the direct answer first, then the numbers that \
-support it. No headings or tables."""
+- Write a short answer: the direct answer first, then the numbers that support it."""
 
 
 def _text(content: list[Any]) -> str:

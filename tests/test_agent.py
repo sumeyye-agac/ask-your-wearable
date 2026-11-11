@@ -65,6 +65,9 @@ def test_request_carries_the_model_tools_and_data_range(two_weeks):
     assert request["model"] == "claude-haiku-5-5"
     assert [t["name"] for t in request["tools"]] == list(TOOL_FUNCTIONS)
     assert "2024-01-01 to 2024-01-14" in request["system"]
+    assert "the last complete day, 2024-01-14 (Sunday)" in request["system"]
+    assert "2024-01-08 to 2024-01-14" in request["system"]
+    assert "not recorded in full" not in request["system"]
     assert request["messages"][0] == {"role": "user", "content": "hi"}
 
 
@@ -139,3 +142,12 @@ def test_trace_file_gets_one_json_line_per_question(two_weeks, tmp_path):
     record = json.loads(lines[0])
     assert record["user_id"] == "demo" and record["status"] == "answered"
     assert record["tool_calls"][0]["name"] == "weekly_summary"
+
+
+def test_prompt_names_the_partial_day_when_the_export_stopped_early(two_weeks):
+    partial = two_weeks.copy()
+    partial.loc["2024-01-14", "steps"] = float("nan")   # sleep is still there on the 14th
+    prompt = agent.system_prompt(partial)
+    assert "the last complete day, 2024-01-13 (Saturday)" in prompt
+    assert "2024-01-07 to 2024-01-13" in prompt
+    assert "Data after 2024-01-13 is from a day that was not recorded in full" in prompt
