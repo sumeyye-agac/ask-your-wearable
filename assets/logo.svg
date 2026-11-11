@@ -1,0 +1,8 @@
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ask Your Wearable logo: a watch whose face is a speech bubble with a pulse line">
+  <rect x="23" y="1" width="18" height="12" rx="4" fill="#2A7F7A" opacity="0.45"/>
+  <rect x="23" y="51" width="18" height="12" rx="4" fill="#2A7F7A" opacity="0.45"/>
+  <path d="M20 12 H44 A10 10 0 0 1 54 22 V42 A10 10 0 0 1 44 52 H20 A10 10 0 0 1 10.6 45.4 L5 49 L10 37 V22 A10 10 0 0 1 20 12 Z"
+        fill="#FFFFFF" stroke="#2A7F7A" stroke-width="4.5" stroke-linejoin="round"/>
+  <polyline points="17,32.5 24,32.5 27,25 32,40 36,28 39,32.5 47,32.5" fill="none"
+            stroke="#2A7F7A" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

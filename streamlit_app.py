@@ -25,13 +25,15 @@ from wearable.agent import ANSWERED, DEFAULT_MODEL, AgentResult, append_trace, a
 from wearable.app_text import (ABOUT_DATA, AUTHOR, DATASET_CREDIT, INTRO, LIMITS, PIPELINE,
                                PIPELINE_DOT, RAW_SAMPLE_NOTE, RAW_TABLES)
 from wearable.presentation import (NOT_CONFIGURED, STATUS_MESSAGES, ChartSpec, UsageLimiter,
-                                   ACCENT, api_error_message, chart_for, credits, person_names,
-                                   person_profile, to_altair)
+                                   ACCENT, METRIC_ICONS, api_error_message, chart_for,
+                                   chart_heading, credits, person_names, person_profile,
+                                   to_altair)
 from wearable.schema import to_daily_frame
 
 REPO = Path(__file__).resolve().parent
 DEMO = REPO / "data/demo/demo_daily.csv"
 RAW_SAMPLE = REPO / "data/demo/raw_sample"
+LOGO = REPO / "assets/logo.svg"
 TRACE = Path(os.environ.get("WEARABLE_TRACE", REPO / "logs/trace.jsonl"))
 
 QUESTIONS_PER_VISITOR = 10    # per UTC day
@@ -45,6 +47,46 @@ EXAMPLES = [
     "Am I active enough?",
     "Is my sleep enough?",
 ]
+# The metric each example is mostly about, for its icon. The question itself stays plain text.
+EXAMPLE_METRIC = {
+    "How was my sleep this week?": "minutes_asleep",
+    "Which day was I most active?": "steps",
+    "Do I walk less on days after short sleep?": "steps",
+    "Am I active enough?": "fairly_active_minutes",
+    "Is my sleep enough?": "minutes_asleep",
+}
+
+ACCENT_TINT = "#E3F0EE"
+# A faint pulse line drawn behind the right side of the header band.
+_PULSE = ("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 260 60'>"
+          "<polyline points='0,32 70,32 84,32 94,14 108,50 120,22 130,32 170,32 180,26 188,38 "
+          "196,32 260,32' fill='none' stroke='%232A7F7A' stroke-opacity='0.22' stroke-width='3' "
+          "stroke-linecap='round' stroke-linejoin='round'/></svg>")
+STYLE = f"""
+<style>
+.ayw-header {{
+  display: flex; align-items: center; gap: 16px; padding: 22px 26px; border-radius: 16px;
+  background: {ACCENT_TINT} url("{_PULSE}") no-repeat right 22px center / 240px 56px;
+}}
+.ayw-header svg {{ width: 56px; height: 56px; flex: none; }}
+.ayw-header h1 {{ margin: 0; padding: 0; font-size: 2.3rem; font-weight: 700;
+                  letter-spacing: -0.01em; color: #1E2A2C; }}
+/* Selected person: solid accent. !important because Streamlit sets the selected
+   background with a more specific generated class. */
+button[data-variant="segmented_control"][aria-checked="true"] {{
+  background-color: {ACCENT} !important; border-color: {ACCENT} !important;
+}}
+button[data-variant="segmented_control"][aria-checked="true"] p {{ color: #FFFFFF !important; }}
+@media (max-width: 640px) {{
+  .ayw-header {{ background-image: none; padding: 16px 18px; }}
+  .ayw-header h1 {{ font-size: 1.8rem; }}
+  .ayw-header svg {{ width: 44px; height: 44px; }}
+}}
+/* Active tab: accent text and a firm underline. */
+[data-testid="stTab"][aria-selected="true"] {{ box-shadow: inset 0 -3px 0 {ACCENT}; }}
+[data-testid="stTab"][aria-selected="true"] p {{ color: {ACCENT}; font-weight: 600; }}
+</style>
+"""
 
 WELLNESS_NOTE = ("General wellness information about sample data, not medical advice. "
                  "The app cannot diagnose anything; for health questions, ask a clinician.")
@@ -144,7 +186,7 @@ def escape_markdown(text: str) -> str:
 
 
 def show_chart(spec: ChartSpec) -> None:
-    st.caption(spec.title)
+    st.caption(chart_heading(spec))
     accent = st.get_option("theme.primaryColor") or ACCENT
     st.altair_chart(to_altair(spec, accent), width="stretch")
 
@@ -220,13 +262,14 @@ def ask_tab(user_id: str, name: str, df: pd.DataFrame) -> None:
     st.caption(WELLNESS_NOTE)
     st.space("small")
 
-    st.pills("Try an example", EXAMPLES, key="example", on_change=use_example)
+    st.pills("Try an example", EXAMPLES, key="example", on_change=use_example,
+             format_func=lambda q: f":material/{METRIC_ICONS[EXAMPLE_METRIC[q]]}: {q}")
 
     # The box is emptied after every submit; the question answered is shown above the answer.
     with st.form("ask", border=False):
         st.text_input("Your question", key="question", max_chars=MAX_QUESTION_CHARS,
                       placeholder="For example: How did my steps change over the two months?")
-        st.form_submit_button("Ask", on_click=use_typed)
+        st.form_submit_button("Ask", on_click=use_typed, type="primary")
 
     # Exactly one question per Ask: the box's text at that moment, then the box is emptied.
     question = (st.session_state.pop("pending", None) or "").strip()
@@ -286,8 +329,10 @@ def data_tab(user_id: str, name: str, df: pd.DataFrame) -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Ask Your Wearable", layout="centered")
-    st.title("Ask Your Wearable")
+    st.set_page_config(page_title="Ask Your Wearable", page_icon=str(LOGO), layout="centered")
+    st.markdown(STYLE, unsafe_allow_html=True)
+    st.markdown(f'<div class="ayw-header">{LOGO.read_text()}<h1>Ask Your Wearable</h1></div>',
+                unsafe_allow_html=True)
 
     users = load_users()
     names = person_names(list(users))
