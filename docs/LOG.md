@@ -62,3 +62,11 @@ One entry per working session. Newest at the bottom. Format is in `CLAUDE.md`.
 - Open issues: the CI assumes independent days; consecutive days are autocorrelated, so the
   intervals are likely too narrow. This is not corrected and should go in the README "Limits".
   This log entry is not committed yet. Next is day 4: the tool-use loop in the terminal.
+
+### 2026-11-11
+- Approved the three day 3 choices: no r below 10 paired days, Spearman as the default method,
+  lag limited to 0-7 days.
+- Added the autocorrelation caveat to the README "Limits": the correlation intervals assume
+  independent days, so they are likely too narrow. Deliberately not corrected for.
+- How to check it: read the last bullet of "Limits" in `README.md`.
+- Open issues: none new. Next is day 4: the tool-use loop in the terminal.
