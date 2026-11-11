@@ -20,6 +20,7 @@ class Metric:
     digits: int = 1          # decimals in tool output; 0 gives whole numbers
     as_hours: bool = False   # tools also give the value as hours and minutes
     weekly_total: bool = False  # adding the days of a week up makes sense
+    whole_day: bool = False  # a value exists only if the whole 24 hours were recorded
 
 
 METRICS: dict[str, Metric] = {
@@ -27,7 +28,7 @@ METRICS: dict[str, Metric] = {
         "steps", "steps",
         "Total steps in the day. Only days with all 24 hours recorded and more than 0 steps.",
         "Higher means more walking.",
-        digits=0, weekly_total=True,
+        digits=0, weekly_total=True, whole_day=True,
     ),
     "minutes_asleep": Metric(
         "minutes_asleep", "minutes",
@@ -54,7 +55,7 @@ METRICS: dict[str, Metric] = {
         "Only days with all 1440 minutes recorded and at least one minute above sedentary.",
         "Higher means more moderate activity as Fitbit estimates it. Fitbit's levels are the "
         "device's own estimate and are not the same as CDC's definition of moderate intensity.",
-        digits=0, weekly_total=True,
+        digits=0, weekly_total=True, whole_day=True,
     ),
     "very_active_minutes": Metric(
         "very_active_minutes", "minutes",
@@ -62,7 +63,7 @@ METRICS: dict[str, Metric] = {
         "Only days with all 1440 minutes recorded and at least one minute above sedentary.",
         "Higher means more vigorous activity as Fitbit estimates it. Fitbit's levels are the "
         "device's own estimate and are not the same as CDC's definition of vigorous intensity.",
-        digits=0, weekly_total=True,
+        digits=0, weekly_total=True, whole_day=True,
     ),
 }
 

@@ -45,6 +45,10 @@ def test_activity_guideline_numbers_and_the_limits_of_the_comparison():
     assert "not the same" in g["applies_to_data"]
     assert "muscle-strengthening" in g["applies_to_data"]
     assert g["intensity_definition_source"].startswith("CDC, How to Measure")
+    assert "no conversion" not in g["applies_to_data"]
+    assert g["conversion"]["source"] == "CDC, What Counts as Physical Activity for Adults"
+    assert g["conversion"]["page_date"] == "2023-12-06"
+    assert "about the same as 2 minutes of moderate-intensity" in g["conversion"]["rule"]
 
 
 def test_result_is_a_copy_so_callers_cannot_change_the_reference():

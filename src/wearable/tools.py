@@ -15,7 +15,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from wearable.guidelines import ACTIVITY_CAVEAT, ACTIVITY_WEEKLY_MINUTES, GUIDELINES
+from wearable.guidelines import (ACTIVITY_CAVEAT, ACTIVITY_CONVERSION, ACTIVITY_WEEKLY_MINUTES,
+                                 GUIDELINES, VIGOROUS_TO_MODERATE)
 from wearable.schema import METRICS, Metric, check_metric
 
 MIN_DAYS_PER_PERIOD = 3     # compare_periods refuses to compare periods with fewer days
@@ -76,6 +77,19 @@ def data_range(df: pd.DataFrame) -> tuple[pd.Timestamp, pd.Timestamp]:
     return dates.min(), dates.max()
 
 
+def last_complete_day(df: pd.DataFrame) -> pd.Timestamp:
+    """The day that "this week" and "the last 4 weeks" end on.
+
+    Steps and active minutes only get a value when all 24 hours of a day were recorded,
+    so the last date on which one of them has a value is the last complete day. An export
+    usually stops partway through its final day; that day is left out. A table without
+    any of these metrics falls back to the last date with any data.
+    """
+    whole = [name for name, m in METRICS.items() if m.whole_day]
+    has_whole = df[whole].notna().any(axis=1)
+    return df.index[has_whole].max() if has_whole.any() else data_range(df)[1]
+
+
 def _window(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
     """Rows from start to end inclusive, with absent dates as missing rows."""
     if start > end:
@@ -112,8 +126,8 @@ def weekly_summary(df: pd.DataFrame, metric: str, end_date: str | None = None,
             "minutes_in_bed" (minutes/night), "mean_hr" (bpm, mean of the day's readings),
             "fairly_active_minutes" or "very_active_minutes" (minutes/day at Fitbit
             intensity level 2 or 3).
-        end_date: last day of the week, YYYY-MM-DD. Defaults to the last date with any data,
-            which is what "this week" means for this data.
+        end_date: last day of the week, YYYY-MM-DD. Defaults to the last complete day
+            (see last_complete_day), which is what "this week" means for this data.
         threshold: optional value in the metric's unit (for example 420 for 7 hours of
             sleep) to compare the week against.
 
@@ -127,7 +141,7 @@ def weekly_summary(df: pd.DataFrame, metric: str, end_date: str | None = None,
     shown, so a reader who checks the subtraction gets the same number.
     """
     m = check_metric(metric)
-    end = _parse_date(end_date, "end_date") if end_date else data_range(df)[1]
+    end = _parse_date(end_date, "end_date") if end_date else last_complete_day(df)
     start = end - pd.Timedelta(days=6)
     values = _window(df, start, end)[metric]
     present = values.dropna()
@@ -180,6 +194,7 @@ def preset_periods(df: pd.DataFrame, preset: str) -> tuple[tuple[pd.Timestamp, p
         mid = first + pd.Timedelta(days=n_days // 2 - 1)
         return (first, mid), (mid + pd.Timedelta(days=1), last)
     if preset == "last_4_weeks_vs_previous_4_weeks":
+        last = last_complete_day(df)
         b_start = last - pd.Timedelta(days=27)
         a_end = b_start - pd.Timedelta(days=1)
         a_start = a_end - pd.Timedelta(days=27)
@@ -202,8 +217,8 @@ def compare_periods(df: pd.DataFrame, metric: str, preset: str | None = None,
         metric: "steps", "minutes_asleep", "minutes_in_bed", "mean_hr",
             "fairly_active_minutes" or "very_active_minutes".
         preset: "first_half_vs_second_half" (the user's data range split in two) or
-            "last_4_weeks_vs_previous_4_weeks" (the 28 days ending on the last date with
-            data against the 28 days before). Period A is always the earlier one.
+            "last_4_weeks_vs_previous_4_weeks" (the 28 days ending on the last complete
+            day against the 28 days before). Period A is always the earlier one.
 
     Returns per-period mean, standard deviation and days with data, the difference
     B minus A in the metric's unit and in percent, and which period is higher. For metrics
@@ -295,7 +310,7 @@ def most_active_day(df: pd.DataFrame, start_date: str | None = None,
     Args:
         start_date, end_date: YYYY-MM-DD, inclusive. Default to the first and last date
             on which any metric has data. For "this week", pass the 7 days ending on the
-            last date with data.
+            last complete day.
         top_n: how many of the most active days to list, 1 to 10. Default 3.
 
     Returns the window, days with step data, the dates without step data (at most 60
@@ -343,37 +358,47 @@ def weekly_active_minutes(df: pd.DataFrame, end_date: str | None = None) -> dict
     carries a caveat saying so, and it must be passed on to the reader.
 
     Args:
-        end_date: last day of the week, YYYY-MM-DD. Defaults to the last date with any data.
+        end_date: last day of the week, YYYY-MM-DD. Defaults to the last complete day.
 
-    Returns the 7-day window, days with data and the missing dates, and for moderate and
-    for vigorous activity: the week's total minutes, CDC's recommended minutes (150 and
-    75), total minus recommended, and reaches_recommendation. With missing days a total is
-    a lower bound, so reaches_recommendation is True if the total already reaches the
-    target and None (unknown) otherwise; it is False only for a complete week.
-    reaches_either_alone summarises the two. CDC also accepts an equivalent combination of
-    moderate and vigorous activity but gives no conversion, so no combination is computed.
+    The main result is "combined": fairly active minutes plus 2 x very active minutes,
+    against 150. The factor is CDC's rule of thumb that 1 minute of vigorous activity is
+    about the same as 2 minutes of moderate activity. "moderate" and "vigorous" give the
+    two totals on their own against 150 and 75, as detail. Each part has the total, the
+    recommended minutes, total minus recommended, and reaches_recommendation. With missing
+    days a total is a lower bound, so reaches_recommendation is True if the total already
+    reaches the target and None (unknown) otherwise; it is False only for a complete week.
+    Also returns the 7-day window, days with data, the missing dates and each day's minutes.
     """
-    end = _parse_date(end_date, "end_date") if end_date else data_range(df)[1]
+    end = _parse_date(end_date, "end_date") if end_date else last_complete_day(df)
     start = end - pd.Timedelta(days=6)
     columns = {"moderate": "fairly_active_minutes", "vigorous": "very_active_minutes"}
     window = _window(df, start, end)[list(columns.values())]
     have = window.dropna()
     n, complete = len(have), len(have) == 7
 
-    def part(kind: str) -> dict[str, Any]:
-        target = ACTIVITY_WEEKLY_MINUTES[kind]
-        total = int(have[columns[kind]].sum()) if n else None
+    def against(total: int | None, target: int) -> dict[str, Any]:
         reaches = None
         if total is not None:
             reaches = True if total >= target else (False if complete else None)
-        return {"fitbit_metric": columns[kind], "total_minutes": total,
-                "recommended_minutes": target,
-                "total_minus_recommended": total - target if n else None,
+        return {"recommended_minutes": target,
+                "total_minus_recommended": total - target if total is not None else None,
                 "reaches_recommendation": reaches}
 
+    def part(kind: str) -> dict[str, Any]:
+        total = int(have[columns[kind]].sum()) if n else None
+        return {"fitbit_metric": columns[kind], "total_minutes": total,
+                **against(total, ACTIVITY_WEEKLY_MINUTES[kind])}
+
     moderate, vigorous = part("moderate"), part("vigorous")
-    flags = [moderate["reaches_recommendation"], vigorous["reaches_recommendation"]]
-    either = True if True in flags else (None if None in flags else False)
+    equivalent = None
+    if n:
+        equivalent = moderate["total_minutes"] + VIGOROUS_TO_MODERATE * vigorous["total_minutes"]
+    combined = {
+        "moderate_equivalent_minutes": equivalent,
+        "formula": f"fairly active minutes + {VIGOROUS_TO_MODERATE} x very active minutes",
+        **against(equivalent, ACTIVITY_WEEKLY_MINUTES["moderate"]),
+        "conversion": ACTIVITY_CONVERSION,
+    }
     note = None
     if n == 0:
         note = "No active-minute data in this week."
@@ -385,10 +410,8 @@ def weekly_active_minutes(df: pd.DataFrame, end_date: str | None = None) -> dict
         "start": _day(start), "end": _day(end), "days_with_data": n,
         "missing_dates": [_day(d) for d in window.index[window.isna().any(axis=1)]],
         "complete_week": complete,
+        "combined": combined,
         "moderate": moderate, "vigorous": vigorous,
-        "reaches_either_alone": either,
-        "combination": "CDC also accepts an equivalent combination of moderate and vigorous "
-                       "activity, but its page gives no conversion, so none is computed here.",
         "daily": [{"date": _day(d),
                    "fairly_active_minutes": _num(row["fairly_active_minutes"], 0),
                    "very_active_minutes": _num(row["very_active_minutes"], 0)}
