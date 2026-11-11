@@ -415,3 +415,51 @@ One entry per working session. Newest at the bottom. Format is in `CLAUDE.md`.
 - Open issues: the question-to-metric keywords are a short hand-written list; a question in
   other words (for example "rest" or "bedtime") falls back to the last call. The 8501 server
   may need a restart to load the changed package modules.
+
+### 2026-11-11
+- Day 6, preparation only; not deployed. Secrets: `streamlit_app.setting` reads
+  `ANTHROPIC_API_KEY` (and `WEARABLE_MODEL`) from `st.secrets` first, then from the environment,
+  which locally includes `.env`; the key is passed to the client and never printed. Checked in
+  Streamlit 1.67.0: without a secrets file `st.secrets` raises `StreamlitSecretNotFoundError`
+  (a `FileNotFoundError`), which is caught. Tests: key from secrets reaches the client and is
+  not on the page; a 401 does not put the key in the server output.
+- Community Cloud readiness, against the docs read today: it installs `requirements.txt` from
+  the root, default Python 3.12 (choose 3.11 in Advanced settings; not changeable later without
+  delete and redeploy), Debian 11, sleep after 12 h without traffic. `requirements.txt` is now
+  runtime only (pandas, anthropic, python-dotenv, streamlit, altair pinned; no pytest, no
+  `-e .`); `requirements-dev.txt` adds pytest and the package. Whether `-e .` installs on
+  Community Cloud is not documented, so the app puts `src/` on the import path itself. Checked
+  in a fresh venv with only `requirements.txt`, on a copy of only the committable files, with
+  no `.env`: `wearable` is not importable there, the page renders, and Ask gives the "no API
+  key" message. Everything the app reads (`data/demo/`, `assets/`, `.streamlit/config.toml`,
+  `src/`) is tracked.
+- Visitor limit. The docs say only that `st.context.ip_address` comes from the WebSocket
+  connection and is spoofable; nothing about Community Cloud or proxies. The 1.67.0 source
+  shows it is the TCP peer of the connection, so behind a proxy it is the proxy. Chosen rule
+  (`presentation.visitor_key`): last public address in `X-Forwarded-For`, else `ip_address` if
+  public, else the browser session. Fallback that protects the budget whatever the platform
+  sends: the app-wide $1.00 per UTC day, then the Console spend limit. The app logs only the
+  kind of source ("forwarded", "ip" or "session"), never an address.
+- CI in `.github/workflows/ci.yml` (checkout and setup-python v7, buildx v4, build-push v7, the
+  versions in their READMEs today): tests on Python 3.11 and 3.12 on every push and pull
+  request, and a build of the new `Dockerfile` (python:3.11-slim, non-root user, the files the
+  app reads only), then the page rendered inside the image and the health endpoint. Built and
+  ran both checks locally with Docker 29.7.2; image 908 MB. 255 tests locally on 3.11.
+- History audit before making the repo public, all 56 commits on the only branch (no tags, no
+  stashes): no `.env`, `secrets.toml`, `data/raw`, `data/private` or `logs` path was ever
+  committed; no match for key or token patterns (Anthropic, OpenAI, GitHub, AWS, Slack, Google,
+  Hugging Face, private-key blocks); the only "API_KEY=" text is the README's `...` placeholder;
+  no email address in any file; commits carry the GitHub noreply address; no home-directory
+  paths. Data in history is the three Zenodo ids (CC BY 4.0) and nothing personal. Checked with
+  `git grep` patterns, not with a dedicated scanner (gitleaks is not installed). `.env` itself
+  was not opened. No history was rewritten.
+- README: live-link placeholder at the top, a step-by-step deploy guide, a Docker and CI section.
+- How to check it: `.venv/bin/python -m pytest`, then `docker build -t ask-your-wearable . && docker run --rm -p 8501:8501 ask-your-wearable`
+- Open issues: what `ip_address` and `X-Forwarded-For` hold on Community Cloud is unverified
+  until the app is deployed; the README has the two-device check. Python 3.12 is tested only by
+  CI, which has not run yet at the time of writing. A public repo will show `CLAUDE.md`,
+  `.claude/` and `docs/REVIEW.md` as they are; that is a choice, not a leak. Traces of visitors'
+  questions are written to the app's own disk on Community Cloud (`logs/trace.jsonl`, lost on
+  restart, not public). GitHub secret scanning can be switched on once the repo is public.
+  Next is the deploy click, then day 7: evaluation.
+
