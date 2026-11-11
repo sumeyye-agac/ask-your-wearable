@@ -22,12 +22,16 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from wearable.agent import ANSWERED, DEFAULT_MODEL, AgentResult, append_trace, ask
+from wearable.app_text import (ABOUT_DATA, AUTHOR, DATASET_CREDIT, INTRO, LIMITS, PIPELINE,
+                               PIPELINE_DOT, RAW_SAMPLE_NOTE, RAW_TABLES)
 from wearable.presentation import (NOT_CONFIGURED, STATUS_MESSAGES, ChartSpec, UsageLimiter,
-                                   api_error_message, chart_for, credits, user_label)
+                                   api_error_message, chart_for, credits, person_names,
+                                   person_profile)
 from wearable.schema import to_daily_frame
 
 REPO = Path(__file__).resolve().parent
 DEMO = REPO / "data/demo/demo_daily.csv"
+RAW_SAMPLE = REPO / "data/demo/raw_sample"
 TRACE = Path(os.environ.get("WEARABLE_TRACE", REPO / "logs/trace.jsonl"))
 
 QUESTIONS_PER_VISITOR = 10    # per UTC day
@@ -42,14 +46,6 @@ EXAMPLES = [
     "Is my sleep enough?",
 ]
 
-DATA_CREDIT = (
-    "Demo data: Furberg, Brinton, Keating & Ortiz (RTI International), *Crowd-sourced Fitbit "
-    "datasets 03.12.2016–05.12.2016*, Zenodo, 2016, "
-    "[doi:10.5281/zenodo.53894](https://doi.org/10.5281/zenodo.53894), licensed "
-    "[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The app uses a daily table "
-    "derived from the minute- and hour-level exports of three users. Fitbit is a trademark of "
-    "Google; this app is not affiliated with or endorsed by Fitbit, Google or the authors."
-)
 WELLNESS_NOTE = ("General wellness information about sample data, not medical advice. "
                  "The app cannot diagnose anything; for health questions, ask a clinician.")
 
@@ -59,6 +55,12 @@ def load_users() -> dict[str, pd.DataFrame]:
     table = pd.read_csv(DEMO, dtype={"user_id": str})
     return {uid: to_daily_frame(rows.drop(columns="user_id"))
             for uid, rows in table.groupby("user_id")}
+
+
+@st.cache_data
+def load_raw_sample() -> dict[str, pd.DataFrame]:
+    return {name: pd.read_csv(RAW_SAMPLE / f"{name}.csv.gz", dtype={"Id": str})
+            for name in RAW_TABLES}
 
 
 @st.cache_resource
@@ -151,7 +153,7 @@ def show_chart(spec: ChartSpec) -> None:
                      y_label=spec.y_label)
 
 
-def show_result(result: AgentResult, df: pd.DataFrame) -> None:
+def show_result(result: AgentResult, df: pd.DataFrame, user_id: str, name: str) -> None:
     if result.status == ANSWERED and result.answer:
         # "$" would start LaTeX in Streamlit markdown.
         st.markdown(result.answer.replace("$", "\\$"))
@@ -166,6 +168,7 @@ def show_result(result: AgentResult, df: pd.DataFrame) -> None:
         st.caption(line)
 
     with st.expander("How this answer was computed"):
+        st.markdown(f"Data: {name}, Zenodo user id `{user_id}`.")
         if not result.tool_calls:
             st.write("The model answered without calling any tool, so the answer contains "
                      "no computed numbers.")
@@ -196,21 +199,14 @@ def use_typed() -> None:
     st.session_state.question = ""
 
 
-def main() -> None:
-    st.set_page_config(page_title="Ask Your Wearable", layout="centered")
-    st.title("Ask Your Wearable")
-    st.write("Ask a question about a person's sleep, steps, activity or heart rate. The "
-             "numbers come from tested Python functions; the language model only chooses "
-             "which to call and puts their results into words.")
-    st.info(WELLNESS_NOTE)
+def no_latex(text: str) -> str:
+    """Markdown treats a pair of "$" as LaTeX; prices must stay prices."""
+    return text.replace("$", "\\$")
 
-    users = load_users()
-    user_id = st.selectbox("Whose data", list(users),
-                           format_func=lambda uid: user_label(uid, users[uid]))
-    df = users[user_id]
-    if st.session_state.get("outcome", {}) and \
-            st.session_state.outcome.get("user_id") not in (None, user_id):
-        st.session_state.outcome = None  # an answer about another user would mislead
+
+def ask_tab(user_id: str, name: str, df: pd.DataFrame) -> None:
+    st.write(INTRO)
+    st.info(WELLNESS_NOTE)
 
     st.write("Try an example:")
     columns = st.columns(2)
@@ -235,13 +231,77 @@ def main() -> None:
         if "error" in outcome:
             st.error(outcome["error"])
         else:
-            show_result(outcome["result"], df)
+            show_result(outcome["result"], df, user_id, name)
 
     left = limiter().remaining(visitor_id())
     st.caption(f"Questions left today: {left} of {QUESTIONS_PER_VISITOR}. Each question is "
                f"answered on its own; the app does not remember earlier questions.")
+
+
+def how_tab() -> None:
+    st.write("From the raw export to an answer, in five steps. The numbers below are the "
+             "checks recorded while building the app.")
+    st.graphviz_chart(PIPELINE_DOT)
+    for step in PIPELINE:
+        st.subheader(step["title"])
+        st.markdown(no_latex(step["text"]))
+        st.markdown("**Key decisions and checks**\n\n" +
+                    "\n".join(f"- {no_latex(d)}" for d in step["decisions"]))
+    st.subheader("Limits")
+    st.markdown("\n".join(f"- {no_latex(item)}" for item in LIMITS))
+
+
+def data_tab(user_id: str, name: str, df: pd.DataFrame) -> None:
+    st.subheader("About the data")
+    st.markdown(ABOUT_DATA)
+
+    st.subheader(f"Daily table: {name}")
+    st.caption(f"Zenodo user id {user_id}. One row per day; an empty cell means no valid "
+               f"measurement that day. Click a column header to sort.")
+    table = df.reset_index()
+    table["date"] = table["date"].dt.strftime("%Y-%m-%d")
+    st.dataframe(table, hide_index=True, key="daily_table")
+    st.download_button("Download this table as CSV", table.to_csv(index=False).encode(),
+                       file_name=f"daily_{user_id}.csv", mime="text/csv", key="download_daily")
+
+    st.subheader(f"Raw sample: {name}")
+    st.caption(RAW_SAMPLE_NOTE)
+    sample = load_raw_sample()
+    tabs = st.tabs([label for label, _ in RAW_TABLES.values()])
+    for tab, (table_name, (_, line)) in zip(tabs, RAW_TABLES.items()):
+        with tab:
+            rows = sample[table_name][sample[table_name]["Id"] == user_id]
+            st.caption(f"`{table_name}`: {line} {len(rows):,} rows.")
+            st.dataframe(rows, hide_index=True, key=f"raw_{table_name}")
+
+
+def main() -> None:
+    st.set_page_config(page_title="Ask Your Wearable", layout="centered")
+    st.title("Ask Your Wearable")
+
+    users = load_users()
+    names = person_names(list(users))
+    with st.sidebar:
+        user_id = st.selectbox("Person", sorted(users), format_func=names.get, key="person")
+        st.caption(person_profile(users[user_id]))
+        st.caption("Three people from a public 2016 Fitbit dataset. The Data tab shows their "
+                   "data in full.")
+    name, df = names[user_id], users[user_id]
+    outcome = st.session_state.get("outcome")
+    if outcome and outcome.get("user_id") not in (None, user_id):
+        st.session_state.outcome = None  # an answer about another person would mislead
+
+    ask, how, data = st.tabs(["Ask", "How it works", "Data"])
+    with ask:
+        ask_tab(user_id, name, df)
+    with how:
+        how_tab()
+    with data:
+        data_tab(user_id, name, df)
+
     st.divider()
-    st.caption(DATA_CREDIT)
+    st.caption(AUTHOR)
+    st.caption(DATASET_CREDIT)
 
 
 main()
