@@ -148,6 +148,24 @@ def user_label(user_id: str, df: pd.DataFrame) -> str:
     return f"Demo user {user_id} ({first:%d %b} to {last:%d %b %Y})"
 
 
+def person_names(user_ids: list[str]) -> dict[str, str]:
+    """'Person A', 'Person B', ... in sorted id order, so a name always means the same id."""
+    ordered = sorted(user_ids)
+    if len(ordered) > 26:
+        raise ValueError("At most 26 people can be named with a letter.")
+    return {uid: f"Person {chr(ord('A') + i)}" for i, uid in enumerate(ordered)}
+
+
+def person_profile(df: pd.DataFrame) -> str:
+    """One line describing a person's data coverage, from counts in the daily table only."""
+    first, last = data_range(df)
+    hr = df["mean_hr"].dropna()
+    hr_part = (f"heart rate on {hr.size} days (from {hr.index.min():%-d %b})" if hr.size
+               else "no heart rate")
+    return (f"{first:%-d %b} to {last:%-d %b %Y}: {int(df['steps'].notna().sum())} days of "
+            f"steps, {int(df['minutes_asleep'].notna().sum())} nights of sleep, {hr_part}.")
+
+
 # --- limits -------------------------------------------------------------------
 
 def _utc_today() -> date:
@@ -235,4 +253,5 @@ def api_error_message(status_code: int | None, error_type: str | None) -> str:
 
 
 __all__ = ["ChartSpec", "chart_for", "credits", "user_label", "UsageLimiter",
-           "STATUS_MESSAGES", "NOT_CONFIGURED", "api_error_message", "LABELS"]
+           "STATUS_MESSAGES", "NOT_CONFIGURED", "api_error_message", "LABELS", "person_names",
+           "person_profile"]

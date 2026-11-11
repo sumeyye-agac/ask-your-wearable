@@ -6,7 +6,7 @@ import pytest
 from wearable.agent import ToolCall
 from wearable.guidelines import get_guideline
 from wearable.presentation import (NOT_CONFIGURED, UsageLimiter, api_error_message, chart_for,
-                                   credits)
+                                   credits, person_names, person_profile)
 from wearable.registry import run_tool
 from wearable.schema import to_daily_frame
 
@@ -131,3 +131,23 @@ def test_api_error_messages(status, kind, words):
 
 def test_not_configured_message_mentions_api_key():
     assert "API key" in NOT_CONFIGURED
+
+
+# --- people -------------------------------------------------------------------
+
+def test_person_names_follow_sorted_ids():
+    assert person_names(["6962181067", "5553957443", "5577150313"]) == {
+        "5553957443": "Person A", "5577150313": "Person B", "6962181067": "Person C"}
+
+
+def test_person_profile_counts_only_what_the_table_has(two_weeks):
+    # Steps on 10 of 14 days, sleep on the last 7 nights, no heart rate.
+    assert person_profile(two_weeks) == ("1 Jan to 14 Jan 2024: 10 days of steps, "
+                                         "7 nights of sleep, no heart rate.")
+
+
+def test_person_profile_names_first_heart_rate_day():
+    df = to_daily_frame(pd.DataFrame({"date": pd.date_range("2024-03-01", periods=5),
+                                      "steps": [1000] * 5,
+                                      "mean_hr": [None, None, 70, 72, None]}))
+    assert person_profile(df).endswith("heart rate on 2 days (from 3 Mar).")
