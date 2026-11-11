@@ -515,3 +515,21 @@ def test_how_it_works_and_data_sections_are_cards():
     for key in ('f"card_step_{i}"', '"card_limits"', '"card_about"', '"card_daily"',
                 '"card_raw"', '"card_example"', '"card_answer"', '"card_steps"'):
         assert f"st.container(key={key})" in source
+
+
+def test_sleep_answer_leads_with_minutes_asleep_even_if_time_in_bed_came_last(monkeypatch):
+    import pandas as pd
+    from wearable.registry import run_tool
+    from wearable.schema import to_daily_frame
+    table = pd.read_csv(Path(APP).parent / "data/demo/demo_daily.csv", dtype={"user_id": str})
+    df = to_daily_frame(table[table.user_id == "5577150313"].drop(columns="user_id"))
+    calls = [ToolCall(1, "weekly_summary", {"metric": m},
+                      run_tool(df, "weekly_summary", {"metric": m}), False)
+             for m in ("minutes_asleep", "minutes_in_bed")]
+    result = AgentResult(question="", answer="You slept well.", status="answered",
+                         model="claude-haiku-5-5", steps=2, tool_calls=calls)
+    stub_ask(monkeypatch, result)
+    at = pick(AppTest.from_file(APP).run(), "5577150313")
+    at = run_example(at, 0)                          # "How was my sleep this week?"
+    assert at.metric[0].label == "Average sleep"
+    assert any("Hours asleep per day" in c.value for c in at.caption)

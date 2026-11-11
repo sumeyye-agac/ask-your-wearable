@@ -336,3 +336,83 @@ def test_every_chart_title_carries_its_metric_icons():
     corr = chart_for([call(df, "correlation", {"metric_x": "minutes_asleep",
                                                "metric_y": "steps"})], df)
     assert corr.icons == ["bedtime", "directions_walk"]
+
+
+# --- which call the headline and chart follow -----------------------------------
+
+def demo_person(user_id: str) -> pd.DataFrame:
+    table = pd.read_csv(Path(__file__).resolve().parents[1] / "data/demo/demo_daily.csv",
+                        dtype={"user_id": str})
+    return to_daily_frame(table[table.user_id == user_id].drop(columns="user_id"))
+
+
+def test_sleep_question_follows_minutes_asleep_not_the_last_call():
+    # The case found in the browser: Person B, asleep first, then time in bed.
+    from wearable.presentation import answer_call
+    df = demo_person("5577150313")
+    calls = [call(df, "weekly_summary", {"metric": "minutes_asleep"}),
+             call(df, "weekly_summary", {"metric": "minutes_in_bed"}, step=2)]
+    question = "How was my sleep this week?"
+    assert answer_call(calls, question).output["metric"] == "minutes_asleep"
+    assert headline_numbers(calls, question)[0].label == "Average sleep"
+    assert chart_for(calls, df, question).y == "Hours asleep"
+    # The order of the calls does not matter.
+    assert chart_for(calls[::-1], df, question).y == "Hours asleep"
+
+
+@pytest.mark.parametrize("question, metric", [
+    ("How long was I in bed this week?", "minutes_in_bed"),
+    ("Bu hafta uykum nasıldı?", "minutes_asleep"),
+    ("Bu hafta yatakta ne kadar kaldım?", "minutes_in_bed"),
+    ("What was my heart rate like?", "mean_hr"),
+    ("How many steps did I walk?", "steps"),
+])
+def test_question_metric_picks_the_matching_call(question, metric):
+    from wearable.presentation import answer_call
+    df = full_frame()
+    calls = [call(df, "weekly_summary", {"metric": m}, step=i + 1)
+             for i, m in enumerate(["minutes_asleep", "mean_hr", "steps", "minutes_in_bed"])]
+    assert answer_call(calls, question).output["metric"] == metric
+
+
+def test_question_without_a_metric_keeps_the_last_call():
+    from wearable.presentation import answer_call
+    df = full_frame()
+    calls = [call(df, "weekly_summary", {"metric": "steps"}),
+             call(df, "weekly_summary", {"metric": "mean_hr"}, step=2)]
+    assert answer_call(calls, "Anything unusual?").output["metric"] == "mean_hr"
+    assert answer_call(calls).output["metric"] == "mean_hr"
+
+
+def test_a_call_covering_both_metrics_of_the_question_wins():
+    from wearable.presentation import answer_call
+    df = full_frame()
+    calls = [call(df, "correlation", {"metric_x": "minutes_asleep", "metric_y": "steps"}),
+             call(df, "weekly_summary", {"metric": "steps"}, step=2)]
+    picked = answer_call(calls, "Do I walk less on days after short sleep?")
+    assert picked.name == "correlation"
+
+
+# --- date labels on charts --------------------------------------------------------
+
+def test_date_charts_use_short_horizontal_day_labels():
+    df = demo_person("5577150313")
+    for name, arguments in [("weekly_summary", {"metric": "steps"}),
+                            ("weekly_active_minutes", {}), ("most_active_day", {})]:
+        spec = chart_for([call(df, name, arguments)], df)
+        assert spec.x == "day" and spec.x_angle == 0
+        for label, day in zip(spec.data["day"], spec.data["date"]):
+            assert label == pd.Timestamp(day).strftime("%a %-d %b")    # e.g. "Wed 4 May"
+        axis = to_altair(spec).to_dict()["encoding"]["x"]["axis"]
+        assert axis["labelAngle"] == 0 and axis["labelOverlap"] == "greedy"
+    week = chart_for([call(df, "weekly_summary", {"metric": "steps"})], df)
+    assert "date" in week.tooltip
+
+
+def test_days_without_data_keep_their_slot_on_the_chart():
+    # Person B has sleep on 2 of the 7 nights of "this week"; all 7 days stay on the axis.
+    df = demo_person("5577150313")
+    spec = chart_for([call(df, "weekly_summary", {"metric": "minutes_asleep"})], df)
+    assert spec.data["Hours asleep"].notna().sum() == 2
+    domain = to_altair(spec).to_dict()["encoding"]["x"]["scale"]["domain"]
+    assert domain == list(spec.data["day"]) and len(domain) == 7
