@@ -171,3 +171,9 @@ def test_prompt_forbids_threshold_comparisons_no_tool_returned(two_weeks):
 def test_prompt_forbids_guidelines_not_looked_up(two_weeks):
     prompt = agent.system_prompt(two_weeks).replace("\n", "")
     assert "unless get_guideline returned it in this conversation" in prompt
+
+
+def test_prompt_attributes_the_missing_significance_test_to_the_tool(two_weeks):
+    prompt = " ".join(agent.system_prompt(two_weeks).split())
+    assert "say that the tool does not run a significance test" in prompt
+    assert "never that the data does not include one" in prompt

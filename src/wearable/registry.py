@@ -74,7 +74,8 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "metrics in minutes the means and the difference also come as hours and minutes in "
         "'_text' fields. Period A is the "
         "earlier one in both presets. If a period has fewer than 3 days with data, "
-        "enough_data is false and no difference is given. No significance test is done.",
+        "enough_data is false and no difference is given. The tool runs no significance "
+        "test, and its result says so in significance_test.",
         {"metric": _METRIC,
          "preset": {"type": "string", "enum": list(tools.PRESETS),
                     "description": "first_half_vs_second_half splits the whole data range "

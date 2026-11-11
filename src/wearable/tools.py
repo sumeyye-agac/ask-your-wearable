@@ -24,6 +24,14 @@ MAX_LISTED_DATES = 60       # cap on date lists returned to the model
 PRESETS = ("first_half_vs_second_half", "last_4_weeks_vs_previous_4_weeks")
 MIN_PAIRS = 10              # correlation reports no coefficient below this many paired days
 MAX_LAG_DAYS = 7
+# Said in the results themselves, so an answer attributes the missing test to the tool,
+# not to the data.
+NO_TEST_COMPARE = ("This tool does not run a significance test. It reports the two means and "
+                   "their difference only, so it cannot say whether the difference is "
+                   "statistically significant.")
+NO_TEST_CORRELATION = ("This tool does not run a significance test. The 95% confidence "
+                       "interval shows the uncertainty in r; ci_excludes_zero says whether "
+                       "the interval excludes 0.")
 MAX_TOP_N = 10
 CORRELATION_METHODS = ("spearman", "pearson")
 
@@ -260,6 +268,7 @@ def compare_periods(df: pd.DataFrame, metric: str, preset: str | None = None,
         "enough_data": enough,
         "note": None if enough else
         f"At least {MIN_DAYS_PER_PERIOD} days with data are needed in each period.",
+        "significance_test": NO_TEST_COMPARE,
     }, m, "difference_b_minus_a")
 
 
@@ -506,7 +515,7 @@ def correlation(df: pd.DataFrame, metric_x: str, metric_y: str, lag_days: int = 
         "pairing": f"{metric_x} on day d with {metric_y} on day d+{lag_days}",
         "method": method, "start": _day(start), "end": _day(end),
         "n": n, "r": None, "ci_95": None, "ci_excludes_zero": None,
-        "enough_data": False, "note": None,
+        "enough_data": False, "note": None, "significance_test": NO_TEST_CORRELATION,
     }
     if n < MIN_PAIRS:
         out["note"] = f"Only {n} days have both values; at least {MIN_PAIRS} are needed."
