@@ -25,7 +25,7 @@ SPLIT = "2016-04-12"  # first day of the second export
 def coverage(daily: pd.DataFrame) -> pd.DataFrame:
     """Per metric: users, days per user, and users with enough data in both halves."""
     rows = []
-    for metric in ["steps", "minutes_asleep", "mean_hr"]:
+    for metric in ["steps", "minutes_asleep", "mean_hr", "fairly_active_minutes"]:
         has = daily.dropna(subset=[metric])
         per_user = has.groupby("user_id")["date"].nunique()
         first = has[has["date"] < SPLIT].groupby("user_id").size()

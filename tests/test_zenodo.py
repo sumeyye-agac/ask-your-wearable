@@ -1,6 +1,6 @@
 import pandas as pd
 
-from wearable.zenodo import daily_heart_rate, daily_sleep, daily_steps
+from wearable.zenodo import daily_active_minutes, daily_heart_rate, daily_sleep, daily_steps
 
 T0 = pd.Timestamp("2024-01-01")
 
@@ -62,3 +62,35 @@ def test_heart_rate_needs_12_hours():
     ])
     out = daily_heart_rate(hr)
     assert out.to_dict("records") == [{"Id": 1, "date": T0, "mean_hr": 70.0}]
+
+
+def _intensity(user, day, codes):
+    ts = pd.date_range(T0 + pd.Timedelta(days=day), periods=len(codes), freq="min")
+    return pd.DataFrame({"Id": user, "ts": ts, "Intensity": codes})
+
+
+def test_active_minutes_count_levels_2_and_3_on_complete_days():
+    # Day 0: 1440 minutes with 30 lightly (1), 12 fairly (2) and 7 very (3) active minutes.
+    full = _intensity(1, 0, [1] * 30 + [2] * 12 + [3] * 7 + [0] * 1391)
+    out = daily_active_minutes(full)
+    assert out.to_dict("records") == [
+        {"Id": 1, "date": T0, "fairly_active_minutes": 12, "very_active_minutes": 7}]
+
+
+def test_active_minutes_drop_partial_days_and_days_without_any_movement():
+    partial = _intensity(1, 0, [2] * 100 + [0] * 800)          # 900 minutes recorded
+    still = _intensity(1, 1, [0] * 1440)                       # device not worn
+    light_only = _intensity(1, 2, [1] * 60 + [0] * 1380)       # worn, nothing above light
+    out = daily_active_minutes(pd.concat([partial, still, light_only]))
+    # A worn day with no fairly or very active minutes is a real zero, not a missing day.
+    assert out.to_dict("records") == [
+        {"Id": 1, "date": T0 + pd.Timedelta(days=2), "fairly_active_minutes": 0,
+         "very_active_minutes": 0}]
+
+
+def test_active_minutes_are_counted_per_user():
+    a = _intensity(1, 0, [2] * 10 + [0] * 1430)
+    b = _intensity(2, 0, [3] * 20 + [0] * 1420)
+    out = daily_active_minutes(pd.concat([a, b]))
+    assert out["fairly_active_minutes"].tolist() == [10, 0]
+    assert out["very_active_minutes"].tolist() == [0, 20]

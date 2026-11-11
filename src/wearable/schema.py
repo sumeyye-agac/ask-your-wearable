@@ -17,6 +17,9 @@ class Metric:
     unit: str
     description: str
     direction: str  # what a higher value means, in wellness terms
+    digits: int = 1          # decimals in tool output; 0 gives whole numbers
+    as_hours: bool = False   # tools also give the value as hours and minutes
+    weekly_total: bool = False  # adding the days of a week up makes sense
 
 
 METRICS: dict[str, Metric] = {
@@ -24,23 +27,42 @@ METRICS: dict[str, Metric] = {
         "steps", "steps",
         "Total steps in the day. Only days with all 24 hours recorded and more than 0 steps.",
         "Higher means more walking.",
+        digits=0, weekly_total=True,
     ),
     "minutes_asleep": Metric(
         "minutes_asleep", "minutes",
         "Minutes scored as asleep in the night's main sleep (episodes of 3 h or more, "
         "episodes split by a gap of 60 min or less merged). Dated by the wake-up day.",
         "Neither direction is better in itself; adults are usually advised 7-9 h.",
+        as_hours=True,
     ),
     "minutes_in_bed": Metric(
         "minutes_in_bed", "minutes",
         "Minutes recorded in the night's main sleep, including restless and awake minutes. "
         "Dated by the wake-up day.",
         "Neither direction is better in itself.",
+        as_hours=True,
     ),
     "mean_hr": Metric(
         "mean_hr", "bpm",
         "Mean of all heart-rate readings in the day. Only days with 12 h or more of readings.",
         "Mostly reflects how active the day was; it is not resting heart rate.",
+    ),
+    "fairly_active_minutes": Metric(
+        "fairly_active_minutes", "minutes",
+        "Minutes in the day that Fitbit scored as fairly active (intensity level 2 of 0-3). "
+        "Only days with all 1440 minutes recorded and at least one minute above sedentary.",
+        "Higher means more moderate activity as Fitbit estimates it. Fitbit's levels are the "
+        "device's own estimate and are not the same as CDC's definition of moderate intensity.",
+        digits=0, weekly_total=True,
+    ),
+    "very_active_minutes": Metric(
+        "very_active_minutes", "minutes",
+        "Minutes in the day that Fitbit scored as very active (intensity level 3 of 0-3). "
+        "Only days with all 1440 minutes recorded and at least one minute above sedentary.",
+        "Higher means more vigorous activity as Fitbit estimates it. Fitbit's levels are the "
+        "device's own estimate and are not the same as CDC's definition of vigorous intensity.",
+        digits=0, weekly_total=True,
     ),
 }
 
