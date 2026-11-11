@@ -34,7 +34,8 @@ FIGURES = [
 
 
 def shown() -> str:
-    parts = [app_text.INTRO, app_text.ABOUT_DATA, *app_text.LIMITS]
+    parts = [app_text.HEADLINE, app_text.SUBLINE, *(text for _, _, text in app_text.STEPS),
+             app_text.ABOUT_DATA, *app_text.LIMITS]
     for step in app_text.PIPELINE:
         parts += [step["text"], *step["decisions"]]
     return "\n".join(parts)

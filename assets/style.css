@@ -1,0 +1,188 @@
+/* The visual system of the whole app, in one file. streamlit_app.py injects it as is.
+
+   Tokens first, then the page from top to bottom. Rules that reach into Streamlit's own
+   markup use its documented hooks where they exist (the "st-key-<key>" class every keyed
+   element gets) and its data-testid attributes where they do not. The second kind can
+   break silently on a Streamlit upgrade; each is marked "Streamlit DOM". */
+
+:root {
+  --teal: #2A7F7A;          /* primary; the same value as the theme's primaryColor */
+  --teal-deep: #17504D;     /* headline, hover */
+  --teal-tint: #E3F0EE;     /* selected card, icon discs */
+  --amber: #F2A93B;         /* the one warm accent: highlights only */
+  --amber-tint: #FDF1DC;
+  --page: #EDF3F2;          /* the same value as the theme's backgroundColor */
+  --card: #FFFFFF;
+  --ink: #1E2A2C;
+  --muted: #5F7376;
+  --radius: 16px;
+  --shadow: 0 1px 2px rgba(23, 80, 77, 0.06), 0 6px 20px rgba(23, 80, 77, 0.08);
+  --shadow-strong: 0 2px 4px rgba(23, 80, 77, 0.08), 0 10px 30px rgba(23, 80, 77, 0.14);
+}
+
+/* --- page ------------------------------------------------------------------ */
+
+/* Streamlit DOM: the centred column. Wider than the default, and closer to the top. */
+[data-testid="stMainBlockContainer"] { max-width: 60rem; padding-top: 3.25rem; }
+
+/* --- type scale -------------------------------------------------------------- */
+
+.ayw-hero { text-align: center; padding: 0.75rem 0 0.5rem; }
+.ayw-hero .ayw-headline {
+  margin: 0; padding: 0; font-size: 2.75rem; line-height: 1.12; font-weight: 700;
+  letter-spacing: -0.025em; color: var(--teal-deep);
+}
+[data-testid="stMarkdownContainer"] .ayw-hero p { margin: 0.75rem auto 0; max-width: 40rem; font-size: 1.0625rem; color: var(--muted); }
+
+.ayw-label {
+  font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted);
+}
+.ayw-label-example {
+  display: inline-block; padding: 0.2rem 0.6rem; border-radius: 999px;
+  background: var(--amber-tint); color: #8A5A0B; box-shadow: inset 0 0 0 1px var(--amber);
+}
+[data-testid="stMarkdownContainer"] p.ayw-note { margin: 0; text-align: center; font-size: 0.8125rem; color: var(--muted); }
+
+/* Section titles on every tab. */
+[data-testid="stHeadingWithActionElements"] h3 {
+  font-size: 1.25rem; font-weight: 600; letter-spacing: -0.01em; color: var(--teal-deep);
+}
+
+/* --- brand and tabs: one navigation row ------------------------------------- */
+
+/* The brand sits on the left of the tab row, the tabs on its right: the negative margin
+   pulls the tabs up beside it and "top" centres it on them. Streamlit DOM. */
+.st-key-brand {
+  width: fit-content; margin-bottom: -3.5rem; position: relative; top: 0.8rem; z-index: 1;
+}
+[data-testid="stTabs"] [role="tablist"] { justify-content: flex-end; }
+[class*="st-key-card_"] [role="tablist"] { justify-content: flex-start; }  /* tabs inside a card */
+.ayw-brand { display: flex; align-items: center; gap: 0.6rem; height: 2.5rem; }
+.ayw-brand svg { width: 34px; height: 34px; flex: none; }
+.ayw-brand span { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
+
+/* Streamlit DOM: active tab in the primary colour with a firm underline. */
+[data-testid="stTab"][aria-selected="true"] { box-shadow: inset 0 -3px 0 var(--teal); }
+[data-testid="stTab"][aria-selected="true"] p { color: var(--teal); font-weight: 600; }
+
+/* --- cards -------------------------------------------------------------------- */
+
+/* Every container whose key starts with "card_": white, soft shadow, no border. */
+[class*="st-key-card_"] {
+  background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 1.5rem 1.75rem;
+}
+
+/* --- the question bar --------------------------------------------------------- */
+
+.st-key-hero { margin-bottom: 1.25rem; }
+.st-key-askbar {
+  background: var(--card); border-radius: 999px; box-shadow: var(--shadow-strong);
+  padding: 0.4rem 0.4rem 0.4rem 1.4rem; max-width: 46rem; margin: 0.5rem auto 0;
+  border: 2px solid transparent; transition: border-color 0.15s;
+}
+.st-key-askbar:focus-within { border-color: var(--teal); }
+/* Streamlit DOM: the input loses its own box, the bar is the box. */
+.st-key-askbar [data-testid="stTextInputRootElement"] {
+  background: transparent !important; border: 0 !important; box-shadow: none !important;
+}
+.st-key-askbar input { font-size: 1.125rem; padding-left: 0; }
+.st-key-askbar [data-testid="InputInstructions"] { display: none; }
+.st-key-askbar button {
+  border-radius: 999px; padding: 0.6rem 1.4rem; font-weight: 600; flex: none;
+}
+.st-key-askbar button:hover { background: var(--teal-deep); border-color: var(--teal-deep); }
+
+/* Example pills, centred under the bar. */
+.st-key-example [role="radiogroup"] { justify-content: center; }
+
+/* --- person cards ------------------------------------------------------------- */
+
+.st-key-person [role="radiogroup"] {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.875rem;
+}
+.st-key-person button {
+  height: auto; width: 100%; padding: 0.875rem 1rem; text-align: left;
+  justify-content: flex-start;
+  background: var(--card) !important; border: 2px solid transparent !important;
+  border-radius: var(--radius) !important; box-shadow: var(--shadow);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.st-key-person button:hover { box-shadow: var(--shadow-strong); }
+.st-key-person button > div, .st-key-person button > div > span {
+  width: 100%; justify-content: flex-start; text-align: left;
+}
+.st-key-person button p {
+  display: grid; grid-template-columns: auto 1fr; column-gap: 0.75rem; row-gap: 0.1rem;
+  align-items: center; margin: 0; color: var(--ink);
+}
+.st-key-person button code {                 /* the letter avatar */
+  grid-row: 1 / span 4; align-self: start;
+  width: 2.5rem; height: 2.5rem; border-radius: 50%; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: inherit; font-size: 1.0625rem; font-weight: 600;
+  background: var(--teal-tint); color: var(--teal-deep);
+}
+.st-key-person button strong { grid-column: 2; font-size: 1rem; font-weight: 600; }
+.st-key-person button em {                   /* one mini stat per line */
+  grid-column: 2; font-style: normal; font-size: 0.8125rem; color: var(--muted);
+  display: flex; align-items: center; gap: 0.35rem; white-space: nowrap;
+}
+.st-key-person button em [data-testid="stIconMaterial"] { color: var(--teal); font-size: 1rem; }
+/* The selected card. */
+.st-key-person button[aria-checked="true"],
+.st-key-person button[aria-pressed="true"] {
+  border-color: var(--teal) !important; background: #F4FAF9 !important;
+  box-shadow: var(--shadow-strong);
+}
+.st-key-person button[aria-checked="true"] code,
+.st-key-person button[aria-pressed="true"] code { background: var(--teal); color: #FFFFFF; }
+
+/* --- answer cards -------------------------------------------------------------- */
+
+.st-key-card_example { box-shadow: var(--shadow), inset 0 3px 0 var(--amber); }
+.st-key-asked_question p {
+  font-size: 1.5rem; line-height: 1.25; font-weight: 600; letter-spacing: -0.015em;
+  color: var(--ink);
+}
+/* Headline numbers. Streamlit DOM. */
+[class*="st-key-card_"] [data-testid="stMetric"] {
+  background: var(--page); border-radius: 12px; padding: 0.75rem 1rem;
+}
+[class*="st-key-card_"] [data-testid="stMetricLabel"] p {
+  font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted);
+}
+[class*="st-key-card_"] [data-testid="stMetricValue"] {
+  font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; color: var(--teal-deep);
+}
+
+/* --- the three-step strip ------------------------------------------------------ */
+
+.ayw-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; }
+.ayw-step { display: flex; gap: 0.75rem; align-items: flex-start; }
+.ayw-step-icon {
+  flex: none; width: 2.5rem; height: 2.5rem; border-radius: 12px; font-size: 1.375rem;
+  font-family: "Material Symbols Rounded"; overflow: hidden; user-select: none;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--teal-tint); color: var(--teal);
+}
+.ayw-step strong { display: block; font-size: 0.9375rem; color: var(--ink); }
+[data-testid="stMarkdownContainer"] .ayw-step p { margin: 0.15rem 0 0; font-size: 0.8125rem; line-height: 1.45; color: var(--muted); }
+
+/* --- small screens -------------------------------------------------------------- */
+
+@media (max-width: 640px) {
+  [data-testid="stMainBlockContainer"] { padding-top: 3rem; }
+  .st-key-brand { margin-bottom: 0; top: 0; }
+  [data-testid="stTabs"] [role="tablist"] { justify-content: flex-start; }
+  .ayw-hero .ayw-headline { font-size: 1.625rem; }
+  [data-testid="stMarkdownContainer"] .ayw-hero p { font-size: 0.9375rem; }
+  .st-key-askbar { padding-left: 1rem; }
+  .st-key-askbar input { font-size: 1rem; }
+  .st-key-person [role="radiogroup"] { grid-template-columns: 1fr; }
+  .ayw-steps { grid-template-columns: 1fr; gap: 1rem; }
+  [class*="st-key-card_"] { padding: 1.125rem 1rem; }
+  .st-key-asked_question p { font-size: 1.25rem; }
+}

@@ -7,8 +7,8 @@ import pytest
 from wearable.agent import ToolCall
 from wearable.guidelines import get_guideline
 from wearable.presentation import (NOT_CONFIGURED, UsageLimiter, api_error_message, chart_for,
-                                   credits, person_names, person_profile,
-                                   to_altair, ACCENT, PERIOD_NAMES)
+                                   credits, headline_numbers, person_card, person_names,
+                                   person_stats, to_altair, ACCENT, PERIOD_NAMES)
 from wearable.registry import run_tool
 from wearable.schema import to_daily_frame
 
@@ -142,17 +142,112 @@ def test_person_names_follow_sorted_ids():
         "5553957443": "Person A", "5577150313": "Person B", "6962181067": "Person C"}
 
 
-def test_person_profile_counts_only_what_the_table_has(two_weeks):
+def test_person_stats_count_only_what_the_table_has(two_weeks):
     # Steps on 10 of 14 days, sleep on the last 7 nights, no heart rate.
-    assert person_profile(two_weeks) == ("1 Jan to 14 Jan 2024: 10 days of steps, "
-                                         "7 nights of sleep, no heart rate.")
+    assert person_stats(two_weeks) == {"nights_of_sleep": 7, "days_of_steps": 10,
+                                       "days_of_heart_rate": 0}
 
 
-def test_person_profile_names_first_heart_rate_day():
-    df = to_daily_frame(pd.DataFrame({"date": pd.date_range("2024-03-01", periods=5),
-                                      "steps": [1000] * 5,
-                                      "mean_hr": [None, None, 70, 72, None]}))
-    assert person_profile(df).endswith("heart rate on 2 days (from 3 Mar).")
+def test_person_card_has_a_letter_a_name_and_three_stats_with_icons(two_weeks):
+    assert person_card("Person B", two_weeks) == (
+        "`B` **Person B** *:material/bedtime: 7 nights of sleep* "
+        "*:material/directions_walk: 10 days of steps* "
+        "*:material/monitor_heart: 0 days of heart rate*")
+
+
+# --- headline numbers -----------------------------------------------------------
+
+def shown(df, name, arguments):
+    return [(h.label, h.value) for h in headline_numbers([call(df, name, arguments)])]
+
+
+def test_headline_for_a_week_of_sleep_uses_the_tools_text(two_weeks):
+    assert shown(two_weeks, "weekly_summary",
+                 {"metric": "minutes_asleep", "end_date": "2024-01-14"}) == [
+        ("Average sleep", "7 h 00 min"), ("Highest, Mon 8 Jan", "7 h 00 min"),
+        ("Nights with data", "7 of 7")]
+
+
+def test_headline_with_a_threshold_counts_days_as_the_tool_did(two_weeks):
+    assert shown(two_weeks, "weekly_summary",
+                 {"metric": "steps", "end_date": "2024-01-14", "threshold": 10000}) == [
+        ("Average steps", "11,000"), ("Days at or above 10,000", "2 of 4"),
+        ("Days with data", "4 of 7")]
+
+
+def test_headline_for_a_week_without_data_is_only_the_coverage(two_weeks):
+    assert shown(two_weeks, "weekly_summary",
+                 {"metric": "minutes_asleep", "end_date": "2024-01-07"}) == [
+        ("Nights with data", "0 of 7")]
+
+
+def test_headline_for_the_most_active_day(two_weeks):
+    assert shown(two_weeks, "most_active_day", {}) == [
+        ("Most active day", "Sun 14 Jan 2024"), ("Steps that day", "14,000"),
+        ("Average steps per day", "6,900")]
+
+
+def test_headline_for_two_periods_names_them_and_signs_the_difference(two_weeks):
+    assert shown(two_weeks, "compare_periods",
+                 {"metric": "steps", "preset": "first_half_vs_second_half"}) == [
+        ("First half, daily average", "4,167"), ("Second half, daily average", "11,000"),
+        ("Second half minus First half", "+6,833")]
+
+
+def test_headline_for_a_correlation_gives_r_its_interval_and_n():
+    df = full_frame()
+    out = run_tool(df, "correlation", {"metric_x": "steps", "metric_y": "mean_hr"})
+    assert shown(df, "correlation", {"metric_x": "steps", "metric_y": "mean_hr"}) == [
+        ("Correlation (r)", str(out["r"])),
+        ("95% confidence interval", f"{out['ci_95'][0]} to {out['ci_95'][1]}"),
+        ("Days with both values", str(out["n"]))]
+
+
+def test_headline_for_active_minutes_leads_with_the_combined_figure():
+    df = full_frame()
+    out = run_tool(df, "weekly_active_minutes", {})
+    assert shown(df, "weekly_active_minutes", {}) == [
+        ("Moderate-equivalent minutes",
+         f"{out['combined']['moderate_equivalent_minutes']:,}"),
+        ("CDC weekly recommendation", "150 min"), ("Days with data", "7 of 7")]
+
+
+def test_no_headline_without_a_tool_result_that_has_one(two_weeks):
+    failed = ToolCall(1, "weekly_summary", {"metric": "x"}, "Unknown metric", True)
+    guideline = ToolCall(1, "get_guideline", {"topic": "sleep_duration"},
+                         get_guideline("sleep_duration"), False)
+    assert headline_numbers([]) == [] and headline_numbers([failed, guideline]) == []
+
+
+def test_every_headline_number_is_in_the_tool_result():
+    # Formatting only: each number shown large must appear in the tool's own output.
+    import json
+    import re
+    table = pd.read_csv(Path(__file__).resolve().parents[1] / "data/demo/demo_daily.csv",
+                        dtype={"user_id": str})
+    calls = [("weekly_summary", {"metric": m, "threshold": 400}) for m in
+             ("steps", "minutes_asleep", "minutes_in_bed", "mean_hr", "very_active_minutes")]
+    calls += [("weekly_summary", {"metric": "minutes_asleep"}), ("most_active_day", {}),
+              ("weekly_active_minutes", {}),
+              ("compare_periods", {"metric": "minutes_asleep",
+                                   "preset": "last_4_weeks_vs_previous_4_weeks"}),
+              ("compare_periods", {"metric": "mean_hr", "preset": "first_half_vs_second_half"}),
+              ("correlation", {"metric_x": "minutes_asleep", "metric_y": "steps"})]
+
+    def numbers(text):
+        return {abs(float(n)) for n in re.findall(r"\d+(?:\.\d+)?", text.replace(",", ""))}
+
+    checked = 0
+    for user_id, rows in table.groupby("user_id"):
+        df = to_daily_frame(rows.drop(columns="user_id"))
+        for name, arguments in calls:
+            one = call(df, name, arguments)
+            # 7 is the length of the week the two weekly tools list day by day.
+            allowed = numbers(json.dumps(one.output)) | {float(len(one.output.get("daily", [])))}
+            for headline in headline_numbers([one]):
+                assert numbers(headline.value) <= allowed, (name, arguments, headline)
+                checked += 1
+    assert checked >= 60
 
 
 # --- chart titles, period labels, colour -----------------------------------------

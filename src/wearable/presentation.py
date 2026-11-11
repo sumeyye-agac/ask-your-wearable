@@ -1,6 +1,7 @@
 """What the web app shows next to an answer, kept free of Streamlit so it can be tested.
 
 - chart_for: one small chart built from the tool calls behind an answer.
+- headline_numbers: one to three figures from the same tool results, shown large.
 - credits: attribution lines that tool results ask to be shown.
 - UsageLimiter: a per-visitor question limit and an app-wide daily spend cap.
 - api_error_message / STATUS_MESSAGES: friendly text for failures.
@@ -169,8 +170,13 @@ def _tint(color: str, amount: float) -> str:
 
 
 def to_altair(spec: ChartSpec, accent: str = ACCENT) -> alt.Chart:
-    """The chart in the accent color. Field names are passed explicitly because labels such
-    as "Mean heart rate (bpm)" would otherwise be parsed as aggregate shorthand."""
+    """The chart in the accent color, on a transparent background so it sits on a card."""
+    return _chart(spec, accent).configure(background="transparent")
+
+
+def _chart(spec: ChartSpec, accent: str) -> alt.Chart:
+    """Field names are passed explicitly because labels such as "Mean heart rate (bpm)"
+    would otherwise be parsed as aggregate shorthand."""
     data = spec.data
     numeric = {c for c in data.columns if pd.api.types.is_numeric_dtype(data[c])}
 
@@ -227,14 +233,145 @@ def person_names(user_ids: list[str]) -> dict[str, str]:
     return {uid: f"Person {chr(ord('A') + i)}" for i, uid in enumerate(ordered)}
 
 
-def person_profile(df: pd.DataFrame) -> str:
-    """One line describing a person's data coverage, from counts in the daily table only."""
-    first, last = data_range(df)
-    hr = df["mean_hr"].dropna()
-    hr_part = (f"heart rate on {hr.size} days (from {hr.index.min():%-d %b})" if hr.size
-               else "no heart rate")
-    return (f"{first:%-d %b} to {last:%-d %b %Y}: {int(df['steps'].notna().sum())} days of "
-            f"steps, {int(df['minutes_asleep'].notna().sum())} nights of sleep, {hr_part}.")
+def person_stats(df: pd.DataFrame) -> dict[str, int]:
+    """How many days of each kind a person has, from counts in the daily table only."""
+    return {"nights_of_sleep": int(df["minutes_asleep"].notna().sum()),
+            "days_of_steps": int(df["steps"].notna().sum()),
+            "days_of_heart_rate": int(df["mean_hr"].notna().sum())}
+
+
+def person_card(name: str, df: pd.DataFrame) -> str:
+    """A person's card as Streamlit label markdown: a letter avatar (inline code), the
+    name (bold) and one line per mini stat (italic, each starting with its Material icon).
+    The page's CSS lays these three kinds of element out as a card."""
+    stats = person_stats(df)
+    return " ".join([
+        f"`{name.split()[-1]}`", f"**{name}**",
+        f"*:material/{METRIC_ICONS['minutes_asleep']}: {stats['nights_of_sleep']} nights of sleep*",
+        f"*:material/{METRIC_ICONS['steps']}: {stats['days_of_steps']} days of steps*",
+        f"*:material/{METRIC_ICONS['mean_hr']}: {stats['days_of_heart_rate']} days of heart rate*",
+    ])
+
+
+# --- headline numbers ----------------------------------------------------------
+
+@dataclass(frozen=True)
+class Headline:
+    label: str
+    value: str
+
+
+HEADLINE_NAMES = {
+    "steps": "steps",
+    "minutes_asleep": "sleep",
+    "minutes_in_bed": "time in bed",
+    "mean_hr": "heart rate",
+    "fairly_active_minutes": "fairly active minutes",
+    "very_active_minutes": "very active minutes",
+}
+_UNITS = {"mean_hr": " bpm", "fairly_active_minutes": " min", "very_active_minutes": " min"}
+
+
+def _number(value: float, metric: str | None = None, signed: bool = False) -> str:
+    """A tool's number as text: thousands separators, no ".0", the metric's unit."""
+    number = int(value) if float(value).is_integer() else value
+    return f"{number:{'+,' if signed else ','}}{_UNITS.get(metric, '')}"
+
+
+def _shown(part: dict[str, Any], key: str, metric: str, signed: bool = False) -> str:
+    """part[key] the way the tool gave it: as hours and minutes for sleep ("<key>_text"),
+    otherwise the number itself with its unit."""
+    return part.get(f"{key}_text") or _number(part[key], metric, signed)
+
+
+def _short_date(day: str, year: bool = False) -> str:
+    return f"{pd.Timestamp(day):%a %-d %b{' %Y' if year else ''}}"
+
+
+def _headline_weekly_summary(out: dict[str, Any]) -> list[Headline]:
+    metric = out["metric"]
+    name = HEADLINE_NAMES[metric]
+    unit = "Nights" if metric in TO_HOURS else "Days"
+    coverage = Headline(f"{unit} with data", f"{out['days_with_data']} of {len(out['daily'])}")
+    if out["mean"] is None:
+        return [coverage]
+    shown = [Headline(f"Average {name}", _shown(out, "mean", metric))]
+    limit = out.get("threshold")
+    if limit:
+        shown.append(Headline(f"{unit} at or above {_shown(limit, 'value', metric)}",
+                              f"{limit['days_at_or_above']} of {out['days_with_data']}"))
+    else:
+        top = out["highest"]
+        shown.append(Headline(f"Highest, {_short_date(top['date'])}",
+                              _shown(top, "value", metric)))
+    return [*shown, coverage]
+
+
+def _headline_most_active_day(out: dict[str, Any]) -> list[Headline]:
+    top = out["most_active"]
+    if top is None:
+        return [Headline("Days with step data", f"{out['days_with_data']} of {out['days']}")]
+    return [Headline("Most active day", _short_date(top["date"], year=True)),
+            Headline("Steps that day", _number(top["steps"])),
+            Headline("Average steps per day", _number(out["mean_steps"]))]
+
+
+def _headline_weekly_active_minutes(out: dict[str, Any]) -> list[Headline]:
+    combined = out["combined"]
+    coverage = Headline("Days with data", f"{out['days_with_data']} of {len(out['daily'])}")
+    if combined["moderate_equivalent_minutes"] is None:
+        return [coverage]
+    return [Headline("Moderate-equivalent minutes",
+                     _number(combined["moderate_equivalent_minutes"])),
+            Headline("CDC weekly recommendation",
+                     f"{_number(combined['recommended_minutes'])} min"),
+            coverage]
+
+
+def _headline_compare_periods(out: dict[str, Any]) -> list[Headline]:
+    if not out["enough_data"]:
+        return []
+    metric = out["metric"]
+    first, second = PERIOD_NAMES.get(out["preset"], PERIOD_NAMES[None])
+    return [Headline(f"{first}, daily average", _shown(out["period_a"], "mean", metric)),
+            Headline(f"{second}, daily average", _shown(out["period_b"], "mean", metric)),
+            Headline(f"{second} minus {first}",
+                     _shown(out, "difference_b_minus_a", metric, signed=True))]
+
+
+def _headline_correlation(out: dict[str, Any]) -> list[Headline]:
+    pairs = Headline("Days with both values", _number(out["n"]))
+    if out["r"] is None:
+        return [pairs]
+    low, high = out["ci_95"]
+    return [Headline("Correlation (r)", str(out["r"])),
+            Headline("95% confidence interval", f"{low} to {high}"),
+            pairs]
+
+
+HEADLINES: dict[str, Callable[[dict[str, Any]], list[Headline]]] = {
+    "weekly_summary": _headline_weekly_summary,
+    "weekly_active_minutes": _headline_weekly_active_minutes,
+    "most_active_day": _headline_most_active_day,
+    "compare_periods": _headline_compare_periods,
+    "correlation": _headline_correlation,
+}
+
+
+def headline_numbers(tool_calls: list[Any]) -> list[Headline]:
+    """One to three headline figures for an answer, or none.
+
+    They are read from the result of the last successful tool call that has any (the
+    same call chart_for draws), and only formatted here: nothing is computed, and nothing
+    is taken from the model's text.
+    """
+    for call in reversed(tool_calls):
+        if call.is_error or call.name not in HEADLINES:
+            continue
+        shown = HEADLINES[call.name](call.output)
+        if shown:
+            return shown
+    return []
 
 
 # --- limits -------------------------------------------------------------------
@@ -325,5 +462,5 @@ def api_error_message(status_code: int | None, error_type: str | None) -> str:
 
 __all__ = ["ChartSpec", "chart_for", "credits", "user_label", "UsageLimiter",
            "STATUS_MESSAGES", "NOT_CONFIGURED", "api_error_message", "LABELS", "person_names",
-           "person_profile", "to_altair", "ACCENT",
-           "METRIC_ICONS", "chart_heading"]
+           "person_stats", "person_card", "to_altair", "ACCENT",
+           "METRIC_ICONS", "chart_heading", "Headline", "headline_numbers"]
