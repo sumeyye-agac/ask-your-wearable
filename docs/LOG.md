@@ -121,3 +121,35 @@ One entry per working session. Newest at the bottom. Format is in `CLAUDE.md`.
   `credit` field itself. "Is my sleep enough?" looked at the last week only. The sleep
   threshold of 7 h ignores naps and the user's unknown age. The fixes from this session are
   not committed yet. Next is day 5: the Streamlit UI.
+
+### 2026-11-11
+- Committed and pushed the three fixes (comparisons in the tools, missing step dates,
+  `get_guideline`).
+- Added active minutes. Checked the coding first: `minuteIntensitiesNarrow` has codes 0-3,
+  which Fitbit's Web API reference names sedentary, lightly, fairly and very active. Counting
+  codes 2 and 3 per day reproduces Fitbit's own `dailyIntensities` on 99.9% and 99.8% of 903
+  complete days. The minute table is used because it covers both months. New daily metrics
+  `fairly_active_minutes` and `very_active_minutes`; the demo CSV was rebuilt and its existing
+  columns are unchanged.
+- New tool `weekly_active_minutes`: weekly totals against CDC's 150 moderate / 75 vigorous
+  minutes, with a caveat in every result that Fitbit's estimate is not CDC's definition
+  (3-5.9 METs, 6.0+ METs, or the talk test; CDC "How to Measure Physical Activity Intensity",
+  page date 2025-12-04). With missing days a total is a lower bound, so the result is "reached"
+  or "unknown", never "missed".
+- Step counts in tool output are whole numbers (halves round up), and every difference is the
+  difference of the rounded numbers shown. 100 tests passing.
+- Reran "Am I active enough?" on the real API for 6962181067 (129 very active minutes against
+  75, 76 fairly active against 150) and 5553957443 (144 and 79). Both answers said the vigorous
+  target was reached, that the moderate one cannot be judged with 12 May missing, and gave the
+  caveat.
+- Decisions to confirm: (1) an active-minutes day needs all 1440 minutes and at least one
+  minute above sedentary; (2) moderate and vigorous are compared with their targets separately
+  and no combination is computed, because the CDC page gives no conversion; (3) a new tool
+  rather than only a metric, so the totals and the caveat come from code.
+- How to check it: `.venv/bin/python -m pytest && .venv/bin/python scripts/ask.py --user 6962181067 "Am I active enough?"`
+- Open issues: 12 May is partial for every demo user, so "this week" never has 7 days of steps
+  or active minutes; anchoring "this week" on the last complete day would fix it but changes
+  approved decision 3. Fitbit's cut-offs between intensity levels are not documented in the
+  sources I read. One answer used bullet points although the prompt asks for plain sentences.
+  The build prints 34 users, the README says 35 in the exports; not looked into. Next is day 5:
+  the Streamlit UI.
