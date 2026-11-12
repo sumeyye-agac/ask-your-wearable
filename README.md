@@ -3,9 +3,9 @@
 Ask plain-language questions about daily wearable data (steps, sleep, heart rate) and get
 answers that come from tested Python functions, not from a language model doing arithmetic.
 
-**Live app:** not deployed yet. The link goes here: `https://<app-name>.streamlit.app`
+**Live app:** https://ask-your-wearable.streamlit.app
 
-**Screenshot:** to be added after the first deploy (`docs/screenshot.png`).
+![Ask Your Wearable](docs/screenshot.png)
 
 - [docs/DATA.md](docs/DATA.md): the dataset, what is in it, coverage tables, rebuilding the demo files.
 - [docs/METHODS.md](docs/METHODS.md): how a day is counted, the validations, the tools, the full list of limits.
