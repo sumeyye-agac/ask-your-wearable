@@ -13,14 +13,11 @@ answers that come from tested Python functions, not from a language model doing 
 
 ## What it does
 
-You pick one of three demo people from a public Fitbit dataset and ask a question. Claude
-Haiku 5.5 chooses among seven deterministic, tested tools (weekly summary, comparison of two
-periods, most active day, correlation, missing-data report, weekly active minutes and a CDC
-guideline lookup) and turns their results into plain language. The headline numbers and charts
-are read from the tool results, never from the model's text, and every answer lists the tool
-calls behind it.
-
-Example, from a real run saved in `data/demo/example_answer.json` (one tool call, $0.0016):
+You pick one of three demo people from a public Fitbit dataset and ask a question in plain
+language. An LLM agent built on the Claude API with tool use (Claude Haiku 5.5) decides which
+Python functions to call; the functions compute every number from the data, and the model only
+turns their results into words. Each answer shows the tool calls behind it, so every figure can
+be checked.
 
 > **Which day was I most active?**
 > You were most active on Thursday, 14 April 2016, with 17,022 steps. That was 466 steps more
