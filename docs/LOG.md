@@ -463,3 +463,19 @@ One entry per working session. Newest at the bottom. Format is in `CLAUDE.md`.
   restart, not public). GitHub secret scanning can be switched on once the repo is public.
   Next is the deploy click, then day 7: evaluation.
 
+
+### 2026-11-12
+- README cut from about 2,800 to about 660 words, in the style of my other repos: intro with
+  the live-link and screenshot placeholders, What it does (with the saved example answer),
+  What was found, Limits (6 bullets), Run it, Data, Next steps.
+- Everything else moved without rewording into `docs/DATA.md` (dataset, exports, coverage,
+  rebuilding the demo files), `docs/METHODS.md` (how a day is counted, the checks against
+  `sleepDay` and `dailyIntensities`, the full limits, CDC sources, terminal and app details) and
+  `docs/DEPLOY.md` (Community Cloud guide, usage limits and visitor identification, Docker and
+  CI). Checked with a script that every sentence of the old README is still in one of these
+  files; only headings and cross-references changed.
+- `tests/test_app_text.py` now checks the app's figures against `README.md` and every
+  `docs/*.md`, not only `README.md` and `docs/LOG.md`. 255 tests pass.
+- How to check it: `.venv/bin/python -m pytest tests/test_app_text.py`, then read `README.md`.
+- Open issues: the screenshot is a placeholder until the app is deployed. The README's example
+  answer is shortened with "[...]"; the full text is in `data/demo/example_answer.json`.
