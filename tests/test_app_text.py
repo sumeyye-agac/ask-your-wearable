@@ -7,9 +7,10 @@ import pytest
 from wearable import app_text
 
 REPO = Path(__file__).resolve().parents[1]
-RECORDS = (REPO / "README.md").read_text() + (REPO / "docs/LOG.md").read_text()
+RECORD_FILES = [REPO / "README.md", *sorted((REPO / "docs").glob("*.md"))]
+RECORDS = "\n".join(path.read_text() for path in RECORD_FILES)
 
-# Each figure shown in the app, and the phrase in README.md or docs/LOG.md it comes from.
+# Each figure shown in the app, and the phrase in README.md or a docs/*.md file it comes from.
 FIGURES = [
     ("332 of 346 nights", "332 of 346"),
     ("99.9% (fairly) and 99.8% (very)", "99.9%"),

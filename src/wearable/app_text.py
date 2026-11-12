@@ -1,6 +1,6 @@
 """Text shown in the web app's "How it works" and "Data" tabs.
 
-Every number here comes from docs/LOG.md or README.md, or was checked against the raw
+Every number here comes from README.md or a file in docs/, or was checked against the raw
 Zenodo export on 2026-11-11 (heart-rate timing, value codes, user counts per table).
 Keep it in sync with those records when they change.
 """
