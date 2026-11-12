@@ -39,7 +39,7 @@ Fitbit's own daily tables:
 - **Steps:** in the first month, the sum of `hourlySteps` and the `dailyActivity` total agree
   within 1% on 92% of 428 user-days.
 - **Coverage is thin:** of 35 volunteers, 34 have usable steps, 22 sleep and 13 a daily heart rate. Only
-  8 have at least 7 days with all three.
+  8 have at least 7 days on which all three are present.
 
 ## Limits
 
