@@ -49,8 +49,8 @@ Fitbit's own daily tables:
   says nothing about cause.
 - "Am I active enough?" is approximate: Fitbit's per-minute intensity levels are not CDC's
   effort-based definition, and the 2× weight for very active minutes is CDC's rule of thumb.
-- Not deployed yet, and the evaluation is not built. Wellness information only; the app does
-  not diagnose anything.
+- The evaluation is not built yet. Wellness information only; the app does not diagnose
+  anything.
 
 The full list is in [docs/METHODS.md](docs/METHODS.md#limits).
 
