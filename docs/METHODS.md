@@ -46,6 +46,9 @@ active minutes on 99.8%.
   others. Consecutive days are not: an active week or a run of short nights makes neighbouring
   days alike. The intervals are therefore likely too narrow, and this is not corrected for.
   A correlation also says nothing about cause.
+- Small samples are refused rather than reported: `compare_periods` gives no difference if a
+  period has fewer than 3 days with data, and the correlation tool gives no r below 10 paired
+  days.
 - Wellness information only. The app does not diagnose anything.
 - The guideline lookup holds two CDC pages (sleep duration, physical activity for adults) and
   nothing else. The sleep comparison uses 7 hours, the lower bound for every adult age group,

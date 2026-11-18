@@ -18,7 +18,7 @@ CC BY 4.0 licence.
 
 ## What is in the exports
 
-- 35 users in total, 33 of them in both months. One of the 35 (`2891001357`) has 12 hours of
+- 35 ids in total, 33 of them in both months. One of the 35 (`2891001357`) has 12 hours of
   data on a single day and nothing else, so no day of theirs counts; that is why the tables
   below never show more than 34 users.
 - The first export has 11 tables, the second 18. Only the second has `sleepDay` and the
